@@ -109,11 +109,20 @@ public class MainActivity extends Activity {
         cip.leftMargin = dp(8); actions.addView(changeIp, cip);
 
         connectButton.setOnClickListener(v -> {
-            if (connected) disconnectUi(); else connectFromFields();
+            if (connected && ipPanel.getVisibility() == View.VISIBLE) {
+                disconnectUi();
+                connectFromFields();
+            } else if (connected) {
+                disconnectUi();
+            } else {
+                connectFromFields();
+            }
         });
         changeIp.setOnClickListener(v -> {
-            ipPanel.setVisibility(ipPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-            ipField.requestFocus();
+            boolean show = ipPanel.getVisibility() != View.VISIBLE;
+            ipPanel.setVisibility(show ? View.VISIBLE : View.GONE);
+            connectButton.setText(connected ? (show ? "Reconnect" : "Disconnect") : "Connect");
+            if (show) ipField.requestFocus();
         });
 
         TextView remoteLabel = text("REMOTE CONTROL", 12, MUTED, true);
