@@ -29,6 +29,24 @@ public final class RemoteApi {
     private static volatile String remoteDeviceId;
     private static volatile String remoteToken;
     private static volatile boolean connecting;
+    public interface StatusListener {
+        void onTvState(int volume, int maxVolume, boolean muted);
+        void onConnection(String message);
+    }
+    private static volatile StatusListener statusListener;
+
+    public static void setStatusListener(StatusListener listener) {
+        statusListener = listener;
+    }
+
+    private static void publishTvState(JSONObject data) {
+        StatusListener listener = statusListener;
+        if (listener == null) return;
+        int volume = data.optInt("volume", -1);
+        int max = data.optInt("max_volume", -1);
+        boolean muted = data.optBoolean("muted", false);
+        if (volume >= 0 && max > 0) listener.onTvState(volume, max, muted);
+    }
 
     private RemoteApi() {}
 
@@ -80,16 +98,30 @@ public final class RemoteApi {
                 remoteSocket = webSocket;
                 connecting = false;
                 flushCommands();
+                webSocket.send("{\"type\":\"get_state\"}");
+                StatusListener listener = statusListener;
+                if (listener != null) listener.onConnection("Connected to TV");
             }
-            @Override public void onMessage(WebSocket webSocket, String text) { }
+            @Override public void onMessage(WebSocket webSocket, String text) {
+                try {
+                    JSONObject data = new JSONObject(text);
+                    if ("tv_state".equals(data.optString("type")) || "ack".equals(data.optString("type"))) {
+                        publishTvState(data);
+                    }
+                } catch (Exception ignored) { }
+            }
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
                 if (remoteSocket == webSocket) remoteSocket = null;
                 connecting = false;
+                StatusListener listener = statusListener;
+                if (listener != null) listener.onConnection("Reconnecting…");
                 scheduleReconnect();
             }
             @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
                 if (remoteSocket == webSocket) remoteSocket = null;
                 connecting = false;
+                StatusListener listener = statusListener;
+                if (listener != null) listener.onConnection("Connection lost — reconnecting…");
                 scheduleReconnect();
             }
         });
