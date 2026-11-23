@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Cassim TV Remote</string>
+    <string name="tv_accessibility_description">Allows Cassim TV Remote to navigate the television interface using accessible focus controls.</string>
+</resources>
