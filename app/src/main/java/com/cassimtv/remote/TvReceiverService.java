@@ -51,8 +51,10 @@ public class TvReceiverService extends Service {
     private void connectSocket() {
         if (stopped || deviceId == null || receiverToken == null) return;
         String url = RemoteApi.BASE_URL.replace("https://", "wss://")
-                + "/tv/receiver/" + deviceId + "?token=" + receiverToken;
-        Request request = new Request.Builder().url(url).build();
+                + "/tv/receiver/" + deviceId;
+        Request request = new Request.Builder().url(url)
+                .header("Authorization", "Bearer " + receiverToken)
+                .build();
         socket = RemoteApi.client().newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 updateNotification("Connected — ready for remote commands");
