@@ -5,6 +5,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -27,10 +30,20 @@ public class TvReceiverService extends Service {
     private boolean stopped = false;
     private final android.os.Handler heartbeatHandler = new android.os.Handler();
     private Runnable heartbeatTask;
+    private final BroadcastReceiver volumeReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (socket != null && "android.media.VOLUME_CHANGED_ACTION".equals(intent.getAction())) {
+                sendTvState(socket);
+            }
+        }
+    };
 
     @Override public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        IntentFilter filter = new IntentFilter("android.media.VOLUME_CHANGED_ACTION");
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(volumeReceiver, filter);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -194,6 +207,7 @@ public class TvReceiverService extends Service {
     @Override public void onDestroy() {
         stopped = true;
         stopHeartbeat();
+        try { unregisterReceiver(volumeReceiver); } catch (Exception ignored) { }
         if (socket != null) socket.close(1000, "Receiver stopped");
         super.onDestroy();
     }
