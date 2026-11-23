@@ -24,6 +24,23 @@ const bearer = (request) => {
 export class DeviceHub extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/create" && request.method === "POST") {
+      const body = await request.json();
+      const existing = await this.ctx.storage.get("pair");
+      if (existing && existing.expiresAt > Date.now() && !existing.consumed) return json({ error: "Code collision" }, 409);
+      await this.ctx.storage.put("pair", { deviceId: body.deviceId, expiresAt: Date.now() + 300000, consumed: false });
+      return json({ ok: true });
+    }
+    if (url.pathname === "/consume" && request.method === "POST") {
+      const result = await this.ctx.storage.transaction(async txn => {
+        const pair = await txn.get("pair");
+        if (!pair || pair.consumed || pair.expiresAt < Date.now()) return null;
+        pair.consumed = true;
+        await txn.put("pair", pair);
+        return pair.deviceId;
+      });
+      return result ? json({ deviceId: result }) : json({ error: "Pairing code is invalid or expired." }, 404);
+    }
     if (url.pathname === "/init" && request.method === "POST") {
       const body = await request.json();
       await this.ctx.storage.put({
