@@ -298,6 +298,92 @@ public class MainActivity extends Activity {
 
     // ─────────────────────────────────────────────────────────────────────
 
+    // Existing receiver management screen retained from the previous app version.
+    private void showExistingTv(String savedId, String savedToken) {
+        Intent service = new Intent(this, TvReceiverService.class);
+        service.putExtra("device_id", savedId);
+        service.putExtra("receiver_token", savedToken);
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+        else startService(service);
+
+        basePage();
+        screenHeader("Television", "Your TV is ready",
+                "This receiver keeps the same identity. Pair additional phones whenever you like.");
+
+        LinearLayout card = glassCard();
+        card.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cp = params(-1, dp(100));
+        cp.topMargin = dp(25);
+        page.addView(card, cp);
+
+        TextView ready = label("●  RECEIVER REGISTERED", 15, TEAL);
+        ready.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(ready);
+
+        Button add = accentButton("Pair another phone", true);
+        LinearLayout.LayoutParams ap = params(-1, dp(54));
+        ap.topMargin = dp(18);
+        page.addView(add, ap);
+        add.setOnClickListener(v -> createAdditionalPairing(savedId, savedToken));
+
+        Button back = ghostButton("Back");
+        LinearLayout.LayoutParams bp = params(-1, dp(48));
+        bp.topMargin = dp(10);
+        page.addView(back, bp);
+        back.setOnClickListener(v -> showHome());
+    }
+
+    private void createAdditionalPairing(String savedId, String savedToken) {
+        basePage();
+        screenHeader("Add a remote", "Pair another phone",
+                "Enter this one-time code on the next phone. Existing remotes stay paired.");
+
+        status = label("Generating secure pairing code…", 14, MUTED);
+        status.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(25);
+        page.addView(status, sp);
+
+        worker.execute(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("device_id", savedId);
+                body.put("receiver_token", savedToken);
+                JSONObject result = RemoteApi.post("/tv/pair/add", body, null);
+                String code = result.getString("pairing_code");
+
+                runOnUiThread(() -> {
+                    status.setText("Enter this code on another phone");
+                    LinearLayout pinCard = glassCard();
+                    pinCard.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams pcp = params(-1, dp(130));
+                    pcp.topMargin = dp(18);
+                    page.addView(pinCard, pcp);
+
+                    TextView pin = label(code, 48, TEAL);
+                    pin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                    pin.setGravity(Gravity.CENTER);
+                    pinCard.addView(pin);
+
+                    TextView expiry = label("Code expires in 5 minutes · Existing phones remain paired", 12, MUTED);
+                    expiry.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams ep = params(-1, -2);
+                    ep.topMargin = dp(12);
+                    page.addView(expiry, ep);
+
+                    Button done = ghostButton("Done");
+                    LinearLayout.LayoutParams dp = params(-1, dp(50));
+                    dp.topMargin = dp(24);
+                    page.addView(done, dp);
+                    done.setOnClickListener(v -> showExistingTv(savedId, savedToken));
+                });
+            } catch (Exception e) {
+                String message = e.getMessage() == null ? "Could not generate pairing code." : e.getMessage();
+                runOnUiThread(() -> status.setText(message));
+            }
+        });
+    }
+
     private void showRemotePair() {
         basePage();
         screenHeader("Connect", "Enter your PIN",
