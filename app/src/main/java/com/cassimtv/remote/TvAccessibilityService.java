@@ -59,7 +59,29 @@ public class TvAccessibilityService extends AccessibilityService {
             AccessibilityNodeInfo current = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
             if (current == null) current = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
             Rect currentRect = new Rect();
-            if (current != null) current.getBoundsInScreen(currentRect);
+            if (current != null) {
+                current.getBoundsInScreen(currentRect);
+            } else {
+                root.getBoundsInScreen(currentRect);
+                AccessibilityNodeInfo initial = null;
+                double initialScore = Double.MAX_VALUE;
+                int centerX = currentRect.centerX();
+                int centerY = currentRect.centerY();
+                for (AccessibilityNodeInfo node : nodes) {
+                    Rect rect = new Rect();
+                    node.getBoundsInScreen(rect);
+                    double score = Math.hypot(rect.centerX() - centerX, rect.centerY() - centerY);
+                    if (score < initialScore) {
+                        initialScore = score;
+                        initial = node;
+                    }
+                }
+                if (initial != null) {
+                    initial.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+                    return initial.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                            || initial.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+                }
+            }
 
             AccessibilityNodeInfo best = null;
             double bestScore = Double.MAX_VALUE;
