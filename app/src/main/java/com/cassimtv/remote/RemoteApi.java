@@ -70,7 +70,7 @@ public final class RemoteApi {
 
     private static synchronized void ensureRemoteConnected() {
         if (remoteDeviceId == null || remoteToken == null || connecting
-                || (remoteSocket != null && remoteSocket.send("{\"type\":\"ping\"}"))) return;
+                || (remoteSocket != null && remoteSocket.readyState() == WebSocket.OPEN)) return;
         connecting = true;
         String url = BASE_URL.replace("https://", "wss://") + "/tv/remote/" + remoteDeviceId;
         Request request = new Request.Builder().url(url)
