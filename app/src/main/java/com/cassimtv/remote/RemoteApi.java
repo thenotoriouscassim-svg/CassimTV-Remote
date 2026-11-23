@@ -34,12 +34,16 @@ public final class RemoteApi {
         void onConnection(String message);
     }
     private static volatile StatusListener statusListener;
+    private static volatile JSONObject lastTvState;
 
     public static void setStatusListener(StatusListener listener) {
         statusListener = listener;
+        JSONObject cached = lastTvState;
+        if (listener != null && cached != null) publishTvState(cached);
     }
 
     private static void publishTvState(JSONObject data) {
+        lastTvState = data;
         StatusListener listener = statusListener;
         if (listener == null) return;
         int volume = data.optInt("volume", -1);
