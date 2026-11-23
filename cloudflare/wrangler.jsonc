@@ -10,6 +10,6 @@
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["DeviceHub", "PairCode"] }
+    { "tag": "v1", "new_sqlite_classes": ["DeviceHub"] }
   ]
 }
