@@ -433,7 +433,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
         p.setMargins(dp(4), 0, dp(4), 0);
         row.addView(b, p);
-        b.setElevation(dp(primary ? 5 : 2));
+        b.setElevation(0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
         b.setContentDescription(action.replace('_', ' ').toLowerCase());
         b.setOnClickListener(v -> sendCommand(action));
     }
@@ -480,15 +482,22 @@ public class MainActivity extends Activity {
         b.setTextSize(14);
         b.setTextColor(TEXT);
         b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(color);
         bg.setCornerRadius(dp(17));
         b.setBackground(bg);
         b.setElevation(dp(2));
-        b.setPadding(dp(8), 0, dp(8), 0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
+        b.setPadding(dp(3), 0, dp(3), 0);
+        b.setFocusable(false);
+        b.setFocusableInTouchMode(false);
         return b;
     }
 
