@@ -116,6 +116,11 @@ export class DeviceHub extends DurableObject {
     catch { ws.send(JSON.stringify({ type: "error", error: "Invalid message" })); return; }
     const role = ws.deserializeAttachment()?.role;
     if (data.type === "ping") { ws.send(JSON.stringify({ type: "pong" })); return; }
+    if (role === "remote" && data.type === "get_state") {
+      const tv = this.ctx.getWebSockets("tv").find(client => client.readyState === WebSocket.OPEN);
+      if (tv) tv.send(JSON.stringify({ type: "get_state" }));
+      return;
+    }
     if (role === "remote") {
       if (!ACTIONS.has(data.action)) { ws.send(JSON.stringify({ type: "error", error: "Unsupported action" })); return; }
       const tv = this.ctx.getWebSockets("tv").find(client => client.readyState === WebSocket.OPEN);
@@ -123,11 +128,6 @@ export class DeviceHub extends DurableObject {
       const id = crypto.randomUUID();
       tv.send(JSON.stringify({ type: "command", id, action: data.action }));
       ws.send(JSON.stringify({ type: "sent", id, action: data.action }));
-      return;
-    }
-    if (role === "remote" && data.type === "get_state") {
-      const tv = this.ctx.getWebSockets("tv").find(client => client.readyState === WebSocket.OPEN);
-      if (tv) tv.send(JSON.stringify({ type: "get_state" }));
       return;
     }
     if (role === "tv" && (data.type === "ack" || data.type === "tv_state")) {
