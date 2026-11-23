@@ -68,11 +68,16 @@ public class TvReceiverService extends Service {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 updateNotification("Connected — ready for remote commands");
                 startHeartbeat(webSocket);
+                sendTvState(webSocket);
             }
 
             @Override public void onMessage(WebSocket webSocket, String text) {
                 try {
                     JSONObject message = new JSONObject(text);
+                    if ("get_state".equals(message.optString("type"))) {
+                        sendTvState(webSocket);
+                        return;
+                    }
                     if (!"command".equals(message.optString("type"))) return;
                     String id = message.optString("id");
                     String action = message.optString("action");
@@ -82,6 +87,7 @@ public class TvReceiverService extends Service {
                     ack.put("id", id);
                     ack.put("ok", ok);
                     ack.put("detail", ok ? "Executed" : "This action is unavailable. Enable the Cassim accessibility service or check TV support.");
+                    appendVolumeState(ack);
                     webSocket.send(ack.toString());
                 } catch (Exception ignored) {
                 }
@@ -125,6 +131,24 @@ public class TvReceiverService extends Service {
         if (!stopped) {
             new android.os.Handler(getMainLooper()).postDelayed(this::connectSocket, 3000);
         }
+    }
+
+    private void appendVolumeState(JSONObject target) {
+        AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+        try {
+            target.put("volume", audio.getStreamVolume(AudioManager.STREAM_MUSIC));
+            target.put("max_volume", audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            target.put("muted", audio.isStreamMute(AudioManager.STREAM_MUSIC));
+        } catch (Exception ignored) { }
+    }
+
+    private void sendTvState(WebSocket webSocket) {
+        try {
+            JSONObject state = new JSONObject();
+            state.put("type", "tv_state");
+            appendVolumeState(state);
+            webSocket.send(state.toString());
+        } catch (Exception ignored) { }
     }
 
     private boolean executeAction(String action) {
