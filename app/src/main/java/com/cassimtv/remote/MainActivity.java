@@ -72,8 +72,8 @@ public class MainActivity extends Activity {
         basePage("HOME", "One app. Two roles.", "Choose how you want to use this device.");
         View gap = new View(this);
         page.addView(gap, params(1, dp(30)));
-        addRoleCard("THIS IS TV", "Display a secure pairing PIN and receive commands.", android.R.drawable.ic_tv, () -> createPairing());
-        addRoleCard("THIS IS REMOTE", "Enter the PIN shown on your television.", android.R.drawable.ic_menu_compass, () -> showRemotePair());
+        addRoleCard("THIS IS TV", "Display a secure pairing PIN and receive commands.", () -> createPairing());
+        addRoleCard("THIS IS REMOTE", "Enter the PIN shown on your television.", () -> showRemotePair());
         TextView note = text("Both devices need an internet connection to reach the relay.", 12, MUTED, false);
         note.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams np = params(-1, -2);
@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
         page.addView(note, np);
     }
 
-    private void addRoleCard(String title, String description, int icon, Runnable click) {
+    private void addRoleCard(String title, String description, Runnable click) {
         LinearLayout card = card();
         card.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams cp = params(-1, -2);
