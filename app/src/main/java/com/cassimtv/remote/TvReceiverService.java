@@ -66,12 +66,12 @@ public class TvReceiverService extends Service {
                 .apply();
         startForeground(NOTIFICATION_ID, notification("Waiting for remote connection"));
         stopped = false;
-        connectSocket();
+        if (socket == null) connectSocket();
         return START_STICKY;
     }
 
     private void connectSocket() {
-        if (stopped || deviceId == null || receiverToken == null) return;
+        if (stopped || socket != null || deviceId == null || receiverToken == null) return;
         String url = RemoteApi.BASE_URL.replace("https://", "wss://")
                 + "/tv/receiver/" + deviceId;
         Request request = new Request.Builder().url(url)
@@ -79,6 +79,10 @@ public class TvReceiverService extends Service {
                 .build();
         socket = RemoteApi.client().newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
+                if (stopped || socket != webSocket) {
+                    webSocket.close(1000, "Receiver no longer active");
+                    return;
+                }
                 updateNotification("Connected — ready for remote commands");
                 startHeartbeat(webSocket);
                 sendTvState(webSocket);
@@ -111,11 +115,15 @@ public class TvReceiverService extends Service {
             }
 
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                if (socket != webSocket) return;
+                socket = null;
                 stopHeartbeat();
                 scheduleReconnect();
             }
 
             @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+                if (socket != webSocket) return;
+                socket = null;
                 stopHeartbeat();
                 updateNotification("Connection interrupted — reconnecting");
                 scheduleReconnect();
