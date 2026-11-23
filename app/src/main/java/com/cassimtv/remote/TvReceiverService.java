@@ -102,7 +102,7 @@ public class TvReceiverService extends Service {
         heartbeatTask = new Runnable() {
             @Override public void run() {
                 if (stopped || socket != webSocket) return;
-                webSocket.send("{\\"type\\":\\"ping\\"}");
+                webSocket.send("{\"type\":\"ping\"}");
                 heartbeatHandler.postDelayed(this, 25000);
             }
         };
