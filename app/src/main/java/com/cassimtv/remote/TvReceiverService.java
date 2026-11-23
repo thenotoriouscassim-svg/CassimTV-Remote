@@ -25,6 +25,8 @@ public class TvReceiverService extends Service {
     private String receiverToken;
     private WebSocket socket;
     private boolean stopped = false;
+    private final android.os.Handler heartbeatHandler = new android.os.Handler();
+    private Runnable heartbeatTask;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -58,6 +60,7 @@ public class TvReceiverService extends Service {
         socket = RemoteApi.client().newWebSocket(request, new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 updateNotification("Connected — ready for remote commands");
+                startHeartbeat(webSocket);
             }
 
             @Override public void onMessage(WebSocket webSocket, String text) {
@@ -82,14 +85,33 @@ public class TvReceiverService extends Service {
             }
 
             @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                stopHeartbeat();
                 scheduleReconnect();
             }
 
             @Override public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+                stopHeartbeat();
                 updateNotification("Connection interrupted — reconnecting");
                 scheduleReconnect();
             }
         });
+    }
+
+    private void startHeartbeat(WebSocket webSocket) {
+        stopHeartbeat();
+        heartbeatTask = new Runnable() {
+            @Override public void run() {
+                if (stopped || socket != webSocket) return;
+                webSocket.send("{\\"type\\":\\"ping\\"}");
+                heartbeatHandler.postDelayed(this, 25000);
+            }
+        };
+        heartbeatHandler.postDelayed(heartbeatTask, 25000);
+    }
+
+    private void stopHeartbeat() {
+        if (heartbeatTask != null) heartbeatHandler.removeCallbacks(heartbeatTask);
+        heartbeatTask = null;
     }
 
     private void scheduleReconnect() {
@@ -140,6 +162,7 @@ public class TvReceiverService extends Service {
 
     @Override public void onDestroy() {
         stopped = true;
+        stopHeartbeat();
         if (socket != null) socket.close(1000, "Receiver stopped");
         super.onDestroy();
     }
