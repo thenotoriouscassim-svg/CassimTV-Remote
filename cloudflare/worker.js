@@ -43,7 +43,7 @@ export class DeviceHub extends DurableObject {
     }
     if (url.pathname === "/init" && request.method === "POST") {
       const body = await request.json();
-      await this.ctx.storage.put({
+      await this.ctx.storage.put("state", {
         deviceId: body.deviceId,
         receiverHash: await sha256(body.receiverToken),
         remoteHash: null,
