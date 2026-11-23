@@ -41,12 +41,19 @@ export class DeviceHub extends DurableObject {
       });
       return result ? json({ deviceId: result }) : json({ error: "Pairing code is invalid or expired." }, 404);
     }
+    if (url.pathname === "/authorize-tv" && request.method === "POST") {
+      const body = await request.json();
+      const state = await this.ctx.storage.get("state");
+      if (!state?.deviceId || await sha256(body.receiverToken || "") !== state.receiverHash) return json({ error: "Unauthorized TV" }, 401);
+      return json({ ok: true });
+    }
     if (url.pathname === "/init" && request.method === "POST") {
       const body = await request.json();
       await this.ctx.storage.put("state", {
         deviceId: body.deviceId,
         receiverHash: await sha256(body.receiverToken),
         remoteHash: null,
+        remoteHashes: [],
         paired: false
       });
       return json({ ok: true });
@@ -54,15 +61,20 @@ export class DeviceHub extends DurableObject {
     if (url.pathname === "/claim" && request.method === "POST") {
       const body = await request.json();
       const state = await this.ctx.storage.get("state");
-      if (!state?.deviceId || state.paired) return json({ error: "Pairing code is invalid or already used." }, 404);
-      state.remoteHash = await sha256(body.remoteToken);
+      if (!state?.deviceId) return json({ error: "Pairing code is invalid or expired." }, 404);
+      const tokenHash = await sha256(body.remoteToken);
+      state.remoteHashes = Array.isArray(state.remoteHashes) ? state.remoteHashes : (state.remoteHash ? [state.remoteHash] : []);
+      if (!state.remoteHashes.includes(tokenHash)) state.remoteHashes.push(tokenHash);
+      state.remoteHash = state.remoteHashes[0] || tokenHash;
       state.paired = true;
       await this.ctx.storage.put("state", state);
       return json({ device_id: state.deviceId, paired: true });
     }
     if (url.pathname === "/status") {
       const state = await this.ctx.storage.get("state");
-      if (!state?.paired || await sha256(bearer(request)) !== state.remoteHash) return json({ error: "Unauthorized" }, 401);
+      const suppliedHash = await sha256(bearer(request));
+      const allowedHashes = state?.remoteHashes || (state?.remoteHash ? [state.remoteHash] : []);
+      if (!state?.paired || !allowedHashes.includes(suppliedHash)) return json({ error: "Unauthorized" }, 401);
       return json({ paired: true, connected: this.ctx.getWebSockets("tv").some(ws => ws.readyState === WebSocket.OPEN) });
     }
     if (url.pathname === "/ws") {
@@ -73,7 +85,8 @@ export class DeviceHub extends DurableObject {
       if (!state?.deviceId || !token) return json({ error: "Unauthorized" }, 401);
       const hash = await sha256(token);
       if (role === "tv" && hash !== state.receiverHash) return json({ error: "Unauthorized TV" }, 401);
-      if (role === "remote" && (!state.paired || hash !== state.remoteHash)) return json({ error: "Unauthorized remote" }, 401);
+      const allowedHashes = state.remoteHashes || (state.remoteHash ? [state.remoteHash] : []);
+      if (role === "remote" && (!state.paired || !allowedHashes.includes(hash))) return json({ error: "Unauthorized remote" }, 401);
       if (role !== "tv" && role !== "remote") return json({ error: "Invalid socket role" }, 400);
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
@@ -83,7 +96,9 @@ export class DeviceHub extends DurableObject {
     }
     if (url.pathname === "/command" && request.method === "POST") {
       const state = await this.ctx.storage.get("state");
-      if (!state?.paired || await sha256(bearer(request)) !== state.remoteHash) return json({ error: "Unauthorized" }, 401);
+      const suppliedHash = await sha256(bearer(request));
+      const allowedHashes = state?.remoteHashes || (state?.remoteHash ? [state.remoteHash] : []);
+      if (!state?.paired || !allowedHashes.includes(suppliedHash)) return json({ error: "Unauthorized" }, 401);
       const body = await request.json();
       if (!ACTIONS.has(body.action)) return json({ error: "Unsupported action" }, 400);
       const tv = this.ctx.getWebSockets("tv").find(ws => ws.readyState === WebSocket.OPEN);
@@ -110,7 +125,12 @@ export class DeviceHub extends DurableObject {
       ws.send(JSON.stringify({ type: "sent", id, action: data.action }));
       return;
     }
-    if (role === "tv" && data.type === "ack") {
+    if (role === "remote" && data.type === "get_state") {
+      const tv = this.ctx.getWebSockets("tv").find(client => client.readyState === WebSocket.OPEN);
+      if (tv) tv.send(JSON.stringify({ type: "get_state" }));
+      return;
+    }
+    if (role === "tv" && (data.type === "ack" || data.type === "tv_state")) {
       for (const remote of this.ctx.getWebSockets("remote")) {
         if (remote.readyState === WebSocket.OPEN) remote.send(JSON.stringify(data));
       }
@@ -143,6 +163,23 @@ export default {
         const codeStub = env.DEVICES.getByName("code:" + code);
         const created = await codeStub.fetch("https://code/create", { method: "POST", body: JSON.stringify({ deviceId }) });
         if (created.status === 200) return json({ device_id: deviceId, pairing_code: code, receiver_token: receiverToken, expires_in_seconds: 300 });
+      }
+      return json({ error: "Could not allocate a pairing code. Try again." }, 503);
+    }
+    if (url.pathname === "/tv/pair/add" && request.method === "POST") {
+      const body = await request.json();
+      if (!body.device_id || !body.receiver_token) return json({ error: "TV credentials required." }, 400);
+      const device = env.DEVICES.getByName("device:" + body.device_id);
+      const auth = await device.fetch("https://device/authorize-tv", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiverToken: body.receiver_token })
+      });
+      if (!auth.ok) return json({ error: "TV authorization failed." }, 401);
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+        const codeStub = env.DEVICES.getByName("code:" + code);
+        const created = await codeStub.fetch("https://code/create", { method: "POST", body: JSON.stringify({ deviceId: body.device_id }) });
+        if (created.status === 200) return json({ pairing_code: code, expires_in_seconds: 300 });
       }
       return json({ error: "Could not allocate a pairing code. Try again." }, 503);
     }
