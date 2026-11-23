@@ -173,7 +173,12 @@ export default {
     if (url.pathname === "/tv/command" && request.method === "POST") {
       const body = await request.json();
       const stub = env.DEVICES.getByName("device:" + body.device_id);
-      return stub.fetch(new Request("https://device/command", request));
+      const forwarded = new Request("https://device/command", {
+        method: "POST",
+        headers: { "Authorization": request.headers.get("Authorization") || "", "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      return stub.fetch(forwarded);
     }
     return json({ error: "Not found" }, 404);
   }
