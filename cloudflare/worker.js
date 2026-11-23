@@ -53,22 +53,22 @@ export class DeviceHub extends DurableObject {
     }
     if (url.pathname === "/claim" && request.method === "POST") {
       const body = await request.json();
-      const state = await this.ctx.storage.get();
+      const state = await this.ctx.storage.get("state");
       if (!state?.deviceId || state.paired) return json({ error: "Pairing code is invalid or already used." }, 404);
       state.remoteHash = await sha256(body.remoteToken);
       state.paired = true;
-      await this.ctx.storage.put(state);
+      await this.ctx.storage.put("state", state);
       return json({ device_id: state.deviceId, paired: true });
     }
     if (url.pathname === "/status") {
-      const state = await this.ctx.storage.get();
+      const state = await this.ctx.storage.get("state");
       if (!state?.paired || await sha256(bearer(request)) !== state.remoteHash) return json({ error: "Unauthorized" }, 401);
       return json({ paired: true, connected: this.ctx.getWebSockets("tv").some(ws => ws.readyState === WebSocket.OPEN) });
     }
     if (url.pathname === "/ws") {
       if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return json({ error: "WebSocket upgrade required" }, 426);
       const role = url.searchParams.get("role");
-      const state = await this.ctx.storage.get();
+      const state = await this.ctx.storage.get("state");
       const token = bearer(request);
       if (!state?.deviceId || !token) return json({ error: "Unauthorized" }, 401);
       const hash = await sha256(token);
@@ -82,7 +82,7 @@ export class DeviceHub extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
     if (url.pathname === "/command" && request.method === "POST") {
-      const state = await this.ctx.storage.get();
+      const state = await this.ctx.storage.get("state");
       if (!state?.paired || await sha256(bearer(request)) !== state.remoteHash) return json({ error: "Unauthorized" }, 401);
       const body = await request.json();
       if (!ACTIONS.has(body.action)) return json({ error: "Unsupported action" }, 400);
