@@ -33,6 +33,8 @@ public class TvAccessibilityService extends AccessibilityService {
                 return service.performGlobalAction(GLOBAL_ACTION_HOME);
             case "BACK":
                 return service.performGlobalAction(GLOBAL_ACTION_BACK);
+            case "POWER":
+                return service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);
             case "DPAD_UP":
                 return service.moveFocus(0, -1);
             case "DPAD_DOWN":
