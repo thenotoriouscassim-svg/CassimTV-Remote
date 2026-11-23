@@ -3,8 +3,12 @@ package com.cassimtv.remote;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -12,9 +16,9 @@ import android.text.InputFilter;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.ProgressBar;
@@ -26,479 +30,703 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final int BG = Color.rgb(8, 13, 25);
-    private static final int PANEL = Color.rgb(19, 29, 49);
-    private static final int BLUE = Color.rgb(49, 119, 245);
-    private static final int TEXT = Color.rgb(244, 247, 255);
-    private static final int MUTED = Color.rgb(157, 174, 202);
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private LinearLayout page;
-    private TextView status;
-    private TextView volumeReadout;
-    private TextView muteReadout;
-    private ProgressBar volumeProgress;
-    private String deviceId;
-    private String remoteToken;
-    private String pairingCode;
 
-    @Override protected void onCreate(Bundle state) {
+    // ── Palette ──────────────────────────────────────────────────────────
+    private static final int BG        = Color.rgb(6,  10,  20);    // near-black base
+    private static final int SURFACE   = Color.rgb(14, 22,  40);    // slightly lifted
+    private static final int CARD      = Color.rgb(22, 35,  65);    // glass card
+    private static final int CARD_EDGE = Color.rgb(38, 60, 110);    // card border highlight
+    private static final int BLUE      = Color.rgb(61, 123, 255);   // primary accent
+    private static final int BLUE_DIM  = Color.rgb(29,  60, 130);   // pressed / secondary
+    private static final int TEAL      = Color.rgb(77, 255, 195);   // positive state
+    private static final int TEXT      = Color.rgb(240, 245, 255);  // primary text
+    private static final int MUTED     = Color.rgb(120, 145, 190);  // secondary text
+    private static final int GHOST     = Color.rgb(55,  80, 125);   // disabled / ghost
+
+    // ── State ─────────────────────────────────────────────────────────────
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private LinearLayout  page;
+    private TextView      status;
+    private TextView      volumeReadout;
+    private TextView      muteReadout;
+    private ProgressBar   volumeProgress;
+    private String        deviceId;
+    private String        remoteToken;
+    private String        pairingCode;
+
+    // ─────────────────────────────────────────────────────────────────────
+    @Override
+    protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
-        android.content.SharedPreferences tvPrefs = getSharedPreferences("tv_settings", MODE_PRIVATE);
-        String savedTvId = tvPrefs.getString("device_id", null);
-        String savedReceiverToken = tvPrefs.getString("receiver_token", null);
-        if (savedTvId != null && savedReceiverToken != null) {
-            Intent receiver = new Intent(this, TvReceiverService.class);
-            receiver.putExtra("device_id", savedTvId);
-            receiver.putExtra("receiver_token", savedReceiverToken);
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(receiver);
-            else startService(receiver);
+
+        android.content.SharedPreferences tvPrefs =
+                getSharedPreferences("tv_settings", MODE_PRIVATE);
+        String savedTvId    = tvPrefs.getString("device_id", null);
+        String savedRecvTok = tvPrefs.getString("receiver_token", null);
+
+        if (savedTvId != null && savedRecvTok != null) {
+            Intent svc = new Intent(this, TvReceiverService.class);
+            svc.putExtra("device_id", savedTvId);
+            svc.putExtra("receiver_token", savedRecvTok);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc);
+            else startService(svc);
         }
-        android.content.SharedPreferences remotePrefs = getSharedPreferences("remote_settings", MODE_PRIVATE);
-        deviceId = remotePrefs.getString("device_id", null);
+
+        android.content.SharedPreferences remotePrefs =
+                getSharedPreferences("remote_settings", MODE_PRIVATE);
+        deviceId    = remotePrefs.getString("device_id", null);
         remoteToken = remotePrefs.getString("remote_token", null);
+
         if (deviceId != null && remoteToken != null) showRemote();
         else showHome();
     }
 
-    private void basePage(String eyebrow, String heading, String subtitle) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
-        page = new LinearLayout(this);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(dp(24), dp(30), dp(24), dp(30));
-        scroll.addView(page);
-        TextView brand = text("CASSIM TV", 13, BLUE, true);
-        brand.setLetterSpacing(0.18f);
-        page.addView(brand);
-        TextView title = text(heading, 30, TEXT, true);
-        LinearLayout.LayoutParams tp = params(-2, -2);
-        tp.topMargin = dp(7);
-        page.addView(title, tp);
-        TextView desc = text(subtitle, 14, MUTED, false);
-        desc.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams dp = params(-1, -2);
-        dp.topMargin = dp(7);
-        page.addView(desc, dp);
-        setContentView(scroll);
-    }
+    // ══════════════════════════════════════════════════════════════════════
+    //  SCREENS
+    // ══════════════════════════════════════════════════════════════════════
 
     private void showHome() {
-        basePage("HOME", "One app. Two roles.", "Choose how you want to use this device.");
-        View gap = new View(this);
-        page.addView(gap, params(1, dp(30)));
-        addRoleCard("THIS IS TV", "Display a secure pairing PIN and receive commands.", () -> {
-            android.content.SharedPreferences prefs = getSharedPreferences("tv_settings", MODE_PRIVATE);
-            String savedId = prefs.getString("device_id", null);
-            String savedToken = prefs.getString("receiver_token", null);
-            if (savedId != null && savedToken != null) showExistingTv(savedId, savedToken);
-            else createPairing();
-        });
-        addRoleCard("THIS IS REMOTE", "Enter the PIN shown on your television.", () -> showRemotePair());
-        TextView note = text("Both devices need an internet connection to reach the relay.", 12, MUTED, false);
-        note.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams np = params(-1, -2);
-        np.topMargin = dp(26);
-        page.addView(note, np);
+        basePage();
+
+        // ── Logo / wordmark ──────────────────────────────────────────────
+        LinearLayout logoRow = hbox(Gravity.CENTER);
+        LinearLayout.LayoutParams lp = params(-2, -2);
+        lp.topMargin = dp(16);
+        page.addView(logoRow, lp);
+
+        View dot = new View(this);
+        GradientDrawable dotBg = new GradientDrawable();
+        dotBg.setShape(GradientDrawable.OVAL);
+        dotBg.setColor(BLUE);
+        dot.setBackground(dotBg);
+        logoRow.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+
+        TextView wordmark = label("CASSIM TV", 11, BLUE);
+        wordmark.setLetterSpacing(0.22f);
+        LinearLayout.LayoutParams wp = params(-2, -2);
+        wp.leftMargin = dp(8);
+        logoRow.addView(wordmark, wp);
+
+        // ── Hero text ────────────────────────────────────────────────────
+        TextView hero = new TextView(this);
+        hero.setText("One app.\nTwo roles.");
+        hero.setTextSize(38);
+        hero.setTextColor(TEXT);
+        hero.setTypeface(Typeface.DEFAULT_BOLD);
+        hero.setGravity(Gravity.CENTER);
+        hero.setLineSpacing(dp(4), 1f);
+        LinearLayout.LayoutParams hp = params(-1, -2);
+        hp.topMargin = dp(22);
+        page.addView(hero, hp);
+
+        TextView sub = label("Set this device as a TV receiver\nor use it as a wireless remote.", 14, MUTED);
+        sub.setGravity(Gravity.CENTER);
+        sub.setLineSpacing(dp(3), 1f);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(10);
+        page.addView(sub, sp);
+
+        // ── Role cards ───────────────────────────────────────────────────
+        View spacer = new View(this);
+        page.addView(spacer, params(1, dp(32)));
+
+        addRoleCard(
+            "Television",
+            "Display a pairing code and accept remote commands from your phone.",
+            "▣",
+            () -> {
+                android.content.SharedPreferences p =
+                        getSharedPreferences("tv_settings", MODE_PRIVATE);
+                String id  = p.getString("device_id", null);
+                String tok = p.getString("receiver_token", null);
+                if (id != null && tok != null) showExistingTv(id, tok);
+                else createPairing();
+            }
+        );
+
+        addRoleCard(
+            "Remote",
+            "Enter the pairing code shown on your television.",
+            "◉",
+            this::showRemotePair
+        );
     }
 
-    private void addRoleCard(String title, String description, Runnable click) {
-        LinearLayout card = card();
-        card.setGravity(Gravity.CENTER);
+    // ─────────────────────────────────────────────────────────────────────
+
+    private void addRoleCard(String title, String desc, String icon, Runnable click) {
+        LinearLayout card = glassCard();
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(20), dp(20), dp(20), dp(20));
+
         LinearLayout.LayoutParams cp = params(-1, -2);
         cp.topMargin = dp(14);
         page.addView(card, cp);
-        TextView iconView = text(title.equals("THIS IS TV") ? "▣" : "◉", 34, BLUE, true);
-        card.addView(iconView);
-        TextView heading = text(title, 18, TEXT, true);
-        LinearLayout.LayoutParams hp = params(-1, -2);
-        hp.topMargin = dp(8);
-        heading.setGravity(Gravity.CENTER);
-        card.addView(heading, hp);
-        TextView desc = text(description, 13, MUTED, false);
-        desc.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams dp = params(-1, -2);
-        dp.topMargin = dp(6);
-        card.addView(desc, dp);
-        card.setOnClickListener(v -> click.run());
-        card.setFocusable(true);
+
+        // Icon badge
+        FrameLayout badge = new FrameLayout(this);
+        GradientDrawable badgeBg = new GradientDrawable();
+        badgeBg.setShape(GradientDrawable.OVAL);
+        badgeBg.setColor(BLUE_DIM);
+        badge.setBackground(badgeBg);
+        badge.setPadding(dp(14), dp(14), dp(14), dp(14));
+
+        TextView iconView = new TextView(this);
+        iconView.setText(icon);
+        iconView.setTextSize(22);
+        iconView.setTextColor(BLUE);
+        iconView.setGravity(Gravity.CENTER);
+        badge.addView(iconView, new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER));
+        card.addView(badge, new LinearLayout.LayoutParams(dp(60), dp(60)));
+
+        // Text block
+        LinearLayout textBlock = vbox();
+        LinearLayout.LayoutParams tbp = new LinearLayout.LayoutParams(0, -2, 1);
+        tbp.leftMargin = dp(16);
+
+        TextView titleView = label(title, 17, TEXT);
+        titleView.setTypeface(Typeface.DEFAULT_BOLD);
+        textBlock.addView(titleView);
+
+        TextView descView = label(desc, 13, MUTED);
+        descView.setLineSpacing(dp(2), 1f);
+        LinearLayout.LayoutParams dvp = params(-1, -2);
+        dvp.topMargin = dp(4);
+        textBlock.addView(descView, dvp);
+
+        card.addView(textBlock, tbp);
+
+        // Chevron
+        TextView chev = label("›", 26, GHOST);
+        chev.setPadding(dp(10), 0, 0, 0);
+        card.addView(chev);
+
         card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> click.run());
+
+        // Pressed state
+        card.setOnTouchListener((v, e) -> {
+            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
+                card.setAlpha(0.75f);
+            else if (e.getAction() == android.view.MotionEvent.ACTION_UP
+                  || e.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
+                card.setAlpha(1f);
+                if (e.getAction() == android.view.MotionEvent.ACTION_UP)
+                    click.run();
+            }
+            return true;
+        });
+        card.setClickable(false); // handled by touch
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+
     private void createPairing() {
-        basePage("TV RECEIVER", "Pair this TV", "Keep this screen open while you connect your phone.");
-        status = text("Contacting Cassim relay…", 14, MUTED, false);
+        basePage();
+        screenHeader("Television", "Waiting for remote…",
+                "Show this code to your phone app to pair.");
+
+        status = label("Reaching Cassim relay…", 13, MUTED);
+        status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(24);
-        status.setGravity(Gravity.CENTER);
         page.addView(status, sp);
+
         worker.execute(() -> {
             try {
-                JSONObject result = RemoteApi.post("/tv/pair/start", new JSONObject(), null);
-                deviceId = result.getString("device_id");
+                JSONObject result = RemoteApi.post(
+                        "/tv/pair/start", new JSONObject(), null);
+
+                deviceId    = result.getString("device_id");
                 pairingCode = result.getString("pairing_code");
                 String receiverToken = result.getString("receiver_token");
+
                 getSharedPreferences("tv_settings", MODE_PRIVATE).edit()
                         .putString("device_id", deviceId)
                         .putString("receiver_token", receiverToken)
                         .apply();
+
                 runOnUiThread(() -> {
-                    status.setText("ENTER THIS CODE ON YOUR PHONE");
-                    status.setTextColor(MUTED);
-                    TextView pin = text(pairingCode, 42, Color.rgb(91, 220, 158), true);
-                    pin.setGravity(Gravity.CENTER);
-                    LinearLayout.LayoutParams pp = params(-1, dp(100));
-                    pp.topMargin = dp(18);
-                    page.addView(pin, pp);
-                    TextView expiry = text("Code expires in 5 minutes", 13, MUTED, false);
-                    expiry.setGravity(Gravity.CENTER);
-                    page.addView(expiry);
-                    Button access = button("ENABLE TV NAVIGATION", Color.rgb(42, 57, 82));
-                    LinearLayout.LayoutParams ap = params(-1, dp(52));
-                    ap.topMargin = dp(25);
+                    status.setText("Enter this code on your phone.");
+
+                    // ── PIN card ─────────────────────────────────────────
+                    LinearLayout pinCard = glassCard();
+                    pinCard.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams pcp = params(-1, dp(140));
+                    pcp.topMargin = dp(20);
+                    page.addView(pinCard, pcp);
+
+                    TextView pinLabel = label("PAIRING CODE", 10, MUTED);
+                    pinLabel.setLetterSpacing(0.14f);
+                    pinCard.addView(pinLabel);
+
+                    TextView pinView = new TextView(this);
+                    pinView.setText(pairingCode);
+                    pinView.setTextSize(52);
+                    pinView.setTextColor(TEAL);
+                    pinView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                    pinView.setGravity(Gravity.CENTER);
+                    pinView.setLetterSpacing(0.14f);
+                    LinearLayout.LayoutParams pvp = params(-1, -2);
+                    pvp.topMargin = dp(6);
+                    pinCard.addView(pinView, pvp);
+
+                    // ── Accessibility button ──────────────────────────────
+                    Button access = accentButton("Enable TV Navigation", false);
+                    LinearLayout.LayoutParams ap = params(-1, dp(54));
+                    ap.topMargin = dp(24);
                     page.addView(access, ap);
-                    access.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-                    TextView help = text("Enable “Cassim TV Navigation” in Accessibility settings for Home, Back and directional navigation. Volume works without it.", 12, MUTED, false);
-                    help.setGravity(Gravity.CENTER);
-                    LinearLayout.LayoutParams hp = params(-1, -2);
-                    hp.topMargin = dp(12);
-                    page.addView(help, hp);
-                    Button home = button("BACK", Color.rgb(42, 57, 82));
-                    LinearLayout.LayoutParams bp = params(-1, dp(48));
-                    bp.topMargin = dp(22);
-                    page.addView(home, bp);
-                    home.setOnClickListener(v -> showHome());
+                    access.setOnClickListener(v ->
+                            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+
                     Intent service = new Intent(this, TvReceiverService.class);
                     service.putExtra("device_id", deviceId);
                     service.putExtra("receiver_token", receiverToken);
                     if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
                     else startService(service);
-                    status.setText("Waiting for your phone to pair…");
                 });
+
             } catch (Exception e) {
-                String message = e.getMessage() == null ? "Could not contact the server." : e.getMessage();
-                runOnUiThread(() -> status.setText("Pairing failed: " + message));
+                runOnUiThread(() -> status.setText("Pairing failed — " + e.getMessage()));
             }
         });
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+
     private void showRemotePair() {
-        basePage("REMOTE", "Connect to your TV", "Enter the six-digit PIN displayed on your television.");
+        basePage();
+        screenHeader("Connect", "Enter your PIN",
+                "Type the six-digit code shown on your television.");
+
+        // ── PIN input ────────────────────────────────────────────────────
+        LinearLayout inputCard = glassCard();
+        inputCard.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams icp = params(-1, -2);
+        icp.topMargin = dp(28);
+        page.addView(inputCard, icp);
+
         EditText pin = new EditText(this);
+        pin.setBackgroundColor(Color.TRANSPARENT);
         pin.setSingleLine(true);
         pin.setGravity(Gravity.CENTER);
         pin.setTextColor(TEXT);
-        pin.setHintTextColor(MUTED);
-        pin.setHint("000000");
-        pin.setTextSize(28);
-        pin.setLetterSpacing(0.2f);
+        pin.setHintTextColor(GHOST);
+        pin.setHint("0 0 0 0 0 0");
+        pin.setTextSize(36);
+        pin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         pin.setInputType(InputType.TYPE_CLASS_NUMBER);
+        pin.setLetterSpacing(0.22f);
         pin.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
-        GradientDrawable inputBg = new GradientDrawable();
-        inputBg.setColor(PANEL);
-        inputBg.setCornerRadius(dp(16));
-        pin.setBackground(inputBg);
-        LinearLayout.LayoutParams ip = params(-1, dp(76));
-        ip.topMargin = dp(30);
-        page.addView(pin, ip);
-        status = text("", 13, MUTED, false);
+        inputCard.addView(pin, params(-1, dp(80)));
+
+        status = label("", 13, Color.rgb(255, 90, 90));
         status.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams sp = params(-1, -2);
-        sp.topMargin = dp(14);
-        page.addView(status, sp);
-        Button connect = button("CONNECT TO TV", BLUE);
-        LinearLayout.LayoutParams cp = params(-1, dp(56));
-        cp.topMargin = dp(20);
-        page.addView(connect, cp);
+        LinearLayout.LayoutParams stp = params(-1, -2);
+        stp.topMargin = dp(12);
+        page.addView(status, stp);
+
+        Button connect = accentButton("Connect to TV", true);
+        LinearLayout.LayoutParams bp = params(-1, dp(56));
+        bp.topMargin = dp(16);
+        page.addView(connect, bp);
+
         connect.setOnClickListener(v -> {
             String code = pin.getText().toString().trim();
             if (!code.matches("\\d{6}")) {
-                status.setText("Enter all six digits.");
+                status.setText("Need all six digits.");
                 return;
             }
             connect.setEnabled(false);
-            status.setText("Pairing…");
+            connect.setText("Pairing…");
+            status.setText("");
+
             worker.execute(() -> {
                 try {
                     JSONObject body = new JSONObject();
                     body.put("code", code);
                     JSONObject result = RemoteApi.post("/tv/pair/claim", body, null);
-                    deviceId = result.getString("device_id");
+
+                    deviceId    = result.getString("device_id");
                     remoteToken = result.getString("remote_token");
+
                     getSharedPreferences("remote_settings", MODE_PRIVATE).edit()
                             .putString("device_id", deviceId)
                             .putString("remote_token", remoteToken)
                             .apply();
+
                     runOnUiThread(this::showRemote);
+
                 } catch (Exception e) {
-                    String message = e.getMessage() == null ? "Pairing failed." : e.getMessage();
                     runOnUiThread(() -> {
                         connect.setEnabled(true);
-                        status.setText(message);
+                        connect.setText("Connect to TV");
+                        status.setText(e.getMessage());
                     });
                 }
             });
         });
     }
 
-    private void showExistingTv(String savedId, String savedToken) {
-        Intent service = new Intent(this, TvReceiverService.class);
-        service.putExtra("device_id", savedId);
-        service.putExtra("receiver_token", savedToken);
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
-        else startService(service);
-        basePage("TV RECEIVER", "Your TV is ready", "This receiver keeps the same identity. Pair additional phones whenever you like.");
-        LinearLayout card = card();
-        card.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams cp = params(-1, dp(100));
-        cp.topMargin = dp(25);
-        page.addView(card, cp);
-        TextView ready = text("●  RECEIVER REGISTERED", 15, Color.rgb(91, 220, 158), true);
-        card.addView(ready);
-        Button add = button("PAIR ANOTHER PHONE", BLUE);
-        LinearLayout.LayoutParams ap = params(-1, dp(54));
-        ap.topMargin = dp(18);
-        page.addView(add, ap);
-        add.setOnClickListener(v -> createAdditionalPairing(savedId, savedToken));
-        Button back = button("BACK", Color.rgb(42, 57, 82));
-        LinearLayout.LayoutParams bp = params(-1, dp(48));
-        bp.topMargin = dp(10);
-        page.addView(back, bp);
-        back.setOnClickListener(v -> showHome());
-    }
-
-    private void createAdditionalPairing(String savedId, String savedToken) {
-        basePage("ADD A REMOTE", "Pair another phone", "Enter this one-time code on the next phone. Existing remotes stay connected.");
-        status = text("Generating secure pairing code…", 14, MUTED, false);
-        status.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams sp = params(-1, -2);
-        sp.topMargin = dp(25);
-        page.addView(status, sp);
-        worker.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("device_id", savedId);
-                body.put("receiver_token", savedToken);
-                JSONObject result = RemoteApi.post("/tv/pair/add", body, null);
-                String code = result.getString("pairing_code");
-                runOnUiThread(() -> {
-                    status.setText("ENTER THIS CODE ON ANOTHER PHONE");
-                    TextView pin = text(code, 42, Color.rgb(91, 220, 158), true);
-                    pin.setGravity(Gravity.CENTER);
-                    LinearLayout.LayoutParams pp = params(-1, dp(100));
-                    pp.topMargin = dp(14);
-                    page.addView(pin, pp);
-                    TextView expiry = text("Code expires in 5 minutes · Existing phones remain paired", 12, MUTED, false);
-                    expiry.setGravity(Gravity.CENTER);
-                    page.addView(expiry);
-                    Button done = button("DONE", Color.rgb(42, 57, 82));
-                    LinearLayout.LayoutParams dp = params(-1, dp(50));
-                    dp.topMargin = dp(25);
-                    page.addView(done, dp);
-                    done.setOnClickListener(v -> showExistingTv(savedId, savedToken));
-                });
-            } catch (Exception e) {
-                String message = e.getMessage() == null ? "Could not generate pairing code." : e.getMessage();
-                runOnUiThread(() -> status.setText(message));
-            }
-        });
-    }
+    // ─────────────────────────────────────────────────────────────────────
 
     private void showRemote() {
         RemoteApi.setStatusListener(new RemoteApi.StatusListener() {
             @Override public void onTvState(int volume, int maxVolume, boolean muted) {
                 runOnUiThread(() -> {
-                    if (volumeReadout != null) volumeReadout.setText("TV VOLUME   " + volume + " / " + maxVolume);
+                    if (volumeReadout != null)
+                        volumeReadout.setText(volume + " / " + maxVolume);
                     if (volumeProgress != null) {
                         volumeProgress.setMax(maxVolume);
                         volumeProgress.setProgress(volume);
                     }
-                    if (muteReadout != null) muteReadout.setText(muted ? "MUTED" : "AUDIO ON");
+                    if (muteReadout != null) {
+                        muteReadout.setText(muted ? "Muted" : "Live");
+                        muteReadout.setTextColor(muted ? Color.rgb(255, 90, 90) : TEAL);
+                    }
                 });
             }
             @Override public void onConnection(String message) {
-                runOnUiThread(() -> {
-                    if (status != null) status.setText(message);
-                });
+                runOnUiThread(() -> { if (status != null) status.setText(message); });
             }
         });
+
         RemoteApi.connectRemote(deviceId, remoteToken);
-        basePage("CASSIM TV  ·  REMOTE", "Your TV", "A faster remote, with live feedback from your receiver.");
+        basePage();
 
-        LinearLayout connection = card();
-        connection.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams conp = params(-1, dp(66));
-        conp.topMargin = dp(18);
-        page.addView(connection, conp);
-        TextView connected = text("●  PAIRED TV", 13, Color.rgb(91, 220, 158), true);
-        connection.addView(connected);
-        TextView sub = text("Secure connection · Multiple phones supported", 11, MUTED, false);
-        LinearLayout.LayoutParams subp = params(-1, -2);
-        subp.topMargin = dp(4);
-        connection.addView(sub, subp);
+        // ── Header strip ─────────────────────────────────────────────────
+        LinearLayout header = hbox(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams hdp = params(-1, dp(44));
+        hdp.topMargin = dp(8);
+        page.addView(header, hdp);
 
-        TextView navTitle = text("DIRECTIONAL CONTROL", 11, MUTED, true);
-        LinearLayout.LayoutParams nt = params(-1, -2);
-        nt.topMargin = dp(22);
-        page.addView(navTitle, nt);
-        LinearLayout pad = card();
-        pad.setPadding(dp(12), dp(12), dp(12), dp(12));
-        LinearLayout.LayoutParams pp = params(-1, -2);
-        pp.topMargin = dp(9);
-        page.addView(pad, pp);
-        LinearLayout r1 = row();
-        pad.addView(r1, params(-1, dp(58)));
-        spacer(r1);
-        addRemoteButton(r1, "▲", "DPAD_UP");
-        spacer(r1);
-        LinearLayout r2 = row();
-        LinearLayout.LayoutParams r2p = params(-1, dp(62));
-        r2p.topMargin = dp(6);
-        pad.addView(r2, r2p);
-        addRemoteButton(r2, "◀", "DPAD_LEFT");
-        addRemoteButton(r2, "OK", "OK", true);
-        addRemoteButton(r2, "▶", "DPAD_RIGHT");
-        LinearLayout r3 = row();
-        LinearLayout.LayoutParams r3p = params(-1, dp(58));
-        r3p.topMargin = dp(6);
-        pad.addView(r3, r3p);
-        spacer(r3);
-        addRemoteButton(r3, "▼", "DPAD_DOWN");
-        spacer(r3);
+        View led = new View(this);
+        GradientDrawable ledBg = new GradientDrawable();
+        ledBg.setShape(GradientDrawable.OVAL);
+        ledBg.setColor(TEAL);
+        led.setBackground(ledBg);
+        header.addView(led, new LinearLayout.LayoutParams(dp(7), dp(7)));
 
-        LinearLayout quick = row();
-        LinearLayout.LayoutParams qp = params(-1, dp(52));
-        qp.topMargin = dp(11);
-        page.addView(quick, qp);
-        addRemoteButton(quick, "BACK", "BACK");
-        addRemoteButton(quick, "HOME", "HOME");
-        addRemoteButton(quick, "POWER", "POWER");
+        TextView tvLabel = label("  Your Television", 15, TEXT);
+        tvLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(tvLabel, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView volumeTitle = text("SOUND", 11, MUTED, true);
-        LinearLayout.LayoutParams vt = params(-1, -2);
-        vt.topMargin = dp(22);
-        page.addView(volumeTitle, vt);
-        LinearLayout sound = card();
-        LinearLayout.LayoutParams soundp = params(-1, dp(126));
-        soundp.topMargin = dp(9);
-        page.addView(sound, soundp);
-        LinearLayout soundHeader = row();
-        sound.addView(soundHeader, params(-1, dp(28)));
-        volumeReadout = text("TV VOLUME   Waiting…", 13, TEXT, true);
-        soundHeader.addView(volumeReadout);
-        spacer(soundHeader);
-        muteReadout = text("AUDIO ON", 10, Color.rgb(91, 220, 158), true);
-        soundHeader.addView(muteReadout);
+        status = label("Connecting…", 11, MUTED);
+        header.addView(status);
+
+        // ── Volume strip ─────────────────────────────────────────────────
+        LinearLayout volCard = glassCard();
+        volCard.setOrientation(LinearLayout.HORIZONTAL);
+        volCard.setGravity(Gravity.CENTER_VERTICAL);
+        volCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams vcp = params(-1, -2);
+        vcp.topMargin = dp(14);
+        page.addView(volCard, vcp);
+
+        LinearLayout volText = vbox();
+        TextView volTitle = label("Volume", 11, MUTED);
+        volText.addView(volTitle);
+        volumeReadout = label("— / —", 20, TEXT);
+        volumeReadout.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        volText.addView(volumeReadout);
+        volCard.addView(volText, new LinearLayout.LayoutParams(0, -2, 1));
+
+        muteReadout = label("Live", 13, TEAL);
+        muteReadout.setTypeface(Typeface.DEFAULT_BOLD);
+        volCard.addView(muteReadout);
+
         volumeProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        volumeProgress.setMax(100);
-        volumeProgress.setProgress(0);
-        LinearLayout.LayoutParams vbp = params(-1, dp(8));
-        vbp.topMargin = dp(13);
-        sound.addView(volumeProgress, vbp);
-        LinearLayout volume = row();
-        LinearLayout.LayoutParams vp = params(-1, dp(48));
-        vp.topMargin = dp(11);
-        sound.addView(volume, vp);
-        addRemoteButton(volume, "−", "VOLUME_DOWN");
-        addRemoteButton(volume, "MUTE", "MUTE");
-        addRemoteButton(volume, "+", "VOLUME_UP");
+        volumeProgress.setProgressTintList(
+                android.content.res.ColorStateList.valueOf(BLUE));
+        LinearLayout.LayoutParams prp = params(-1, dp(3));
+        prp.topMargin = dp(8);
+        page.addView(volumeProgress, prp);
 
-        status = text("Connecting to your TV…", 11, MUTED, false);
-        status.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams st = params(-1, -2);
-        st.topMargin = dp(14);
-        page.addView(status, st);
-        Button unpair = button("DISCONNECT THIS PHONE", Color.rgb(42, 57, 82));
-        LinearLayout.LayoutParams up = params(-1, dp(46));
-        up.topMargin = dp(12);
-        page.addView(unpair, up);
+        // ── D-pad ────────────────────────────────────────────────────────
+        LinearLayout dpadCard = glassCard();
+        dpadCard.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dcp = params(-1, -2);
+        dcp.topMargin = dp(16);
+        page.addView(dpadCard, dcp);
+
+        LinearLayout up = row();
+        dpadCard.addView(up, params(-1, dp(60)));
+        spacer(up);
+        addDpadButton(up, "▲", "DPAD_UP", false);
+        spacer(up);
+
+        LinearLayout mid = row();
+        dpadCard.addView(mid, params(-1, dp(72)));
+        addDpadButton(mid, "◀", "DPAD_LEFT", false);
+        addDpadButton(mid, "OK",  "OK",        true);
+        addDpadButton(mid, "▶", "DPAD_RIGHT", false);
+
+        LinearLayout dn = row();
+        dpadCard.addView(dn, params(-1, dp(60)));
+        spacer(dn);
+        addDpadButton(dn, "▼", "DPAD_DOWN", false);
+        spacer(dn);
+
+        // ── Quick actions ────────────────────────────────────────────────
+        LinearLayout quick = glassCard();
+        quick.setOrientation(LinearLayout.HORIZONTAL);
+        quick.setPadding(dp(10), dp(10), dp(10), dp(10));
+        LinearLayout.LayoutParams qp = params(-1, dp(62));
+        qp.topMargin = dp(14);
+        page.addView(quick, qp);
+
+        addActionButton(quick, "Back",  "BACK",  false);
+        addActionButton(quick, "Home",  "HOME",  false);
+        addActionButton(quick, "⏻",    "POWER", false);
+
+        // ── Volume row ───────────────────────────────────────────────────
+        LinearLayout volRow = glassCard();
+        volRow.setOrientation(LinearLayout.HORIZONTAL);
+        volRow.setPadding(dp(10), dp(10), dp(10), dp(10));
+        LinearLayout.LayoutParams vrp = params(-1, dp(62));
+        vrp.topMargin = dp(10);
+        page.addView(volRow, vrp);
+
+        addActionButton(volRow, "−",    "VOLUME_DOWN", false);
+        addActionButton(volRow, "Mute", "MUTE",        false);
+        addActionButton(volRow, "+",    "VOLUME_UP",   false);
+
+        // ── Disconnect ───────────────────────────────────────────────────
+        Button unpair = ghostButton("Disconnect this phone");
+        LinearLayout.LayoutParams up2 = params(-1, dp(48));
+        up2.topMargin = dp(24);
+        up2.bottomMargin = dp(8);
+        page.addView(unpair, up2);
+
         unpair.setOnClickListener(v -> {
             RemoteApi.setStatusListener(null);
-            getSharedPreferences("remote_settings", MODE_PRIVATE).edit().clear().apply();
-            deviceId = null;
+            getSharedPreferences("remote_settings", MODE_PRIVATE)
+                    .edit().clear().apply();
+            deviceId    = null;
             remoteToken = null;
             showHome();
         });
     }
 
-    private void addRemoteButton(LinearLayout row, String label, String action) {
-        addRemoteButton(row, label, action, false);
+    // ══════════════════════════════════════════════════════════════════════
+    //  UI COMPONENTS
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Full-screen scroll shell. Sets contentView. */
+    private void basePage() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BG);
+        scroll.setClipToPadding(false);
+
+        page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        page.setPadding(dp(20), dp(28), dp(20), dp(32));
+
+        scroll.addView(page);
+        setContentView(scroll);
     }
 
-    private void addRemoteButton(LinearLayout row, String label, String action, boolean primary) {
-        Button b = button(label, primary ? BLUE : Color.rgb(39, 53, 78));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
-        p.setMargins(dp(4), 0, dp(4), 0);
-        row.addView(b, p);
-        b.setElevation(0);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setContentDescription(action.replace('_', ' ').toLowerCase());
-        b.setOnClickListener(v -> sendCommand(action));
+    /** Screen-level header block (eyebrow, big title, subtitle). */
+    private void screenHeader(String eyebrow, String title, String subtitle) {
+        TextView ew = label(eyebrow.toUpperCase(), 10, MUTED);
+        ew.setLetterSpacing(0.16f);
+        page.addView(ew);
+
+        TextView h = new TextView(this);
+        h.setText(title);
+        h.setTextSize(32);
+        h.setTextColor(TEXT);
+        h.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams hp = params(-1, -2);
+        hp.topMargin = dp(6);
+        page.addView(h, hp);
+
+        TextView sub = label(subtitle, 14, MUTED);
+        sub.setLineSpacing(dp(3), 1f);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(6);
+        page.addView(sub, sp);
     }
 
-    private void sendCommand(String action) {
-        if (deviceId == null || remoteToken == null) {
-            status.setText("Pair with a TV first.");
-            return;
-        }
-        RemoteApi.sendRemoteCommand(action);
-        if (status != null) status.setText("Sent " + action.replace('_', ' '));
-    }
-
-    private LinearLayout card() {
+    /** Frosted-glass card container. */
+    private LinearLayout glassCard() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(17), dp(17), dp(17), dp(17));
+        box.setPadding(dp(16), dp(16), dp(16), dp(16));
+
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(PANEL);
-        bg.setCornerRadius(dp(19));
+        bg.setColor(CARD);
+        bg.setCornerRadius(dp(20));
+        bg.setStroke(dp(1), CARD_EDGE);
         box.setBackground(bg);
+
         return box;
     }
 
-    private LinearLayout row() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.HORIZONTAL);
-        l.setGravity(Gravity.CENTER_VERTICAL);
-        return l;
-    }
-
-    private TextView text(String value, int size, int color, boolean bold) {
-        TextView t = new TextView(this);
-        t.setText(value);
-        t.setTextSize(size);
-        t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return t;
-    }
-
-    private Button button(String label, int color) {
+    /** D-pad directional / OK button. */
+    private void addDpadButton(LinearLayout row, String label,
+                               String action, boolean primary) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextSize(14);
-        b.setTextColor(TEXT);
+        b.setTextSize(primary ? 15 : 20);
+        b.setTextColor(primary ? Color.WHITE : TEXT);
         b.setAllCaps(false);
         b.setSingleLine(true);
         b.setGravity(Gravity.CENTER);
         b.setIncludeFontPadding(false);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(color);
-        bg.setCornerRadius(dp(17));
+        if (primary) {
+            bg.setColor(BLUE);
+            bg.setShape(GradientDrawable.OVAL);
+        } else {
+            bg.setColor(Color.TRANSPARENT);
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setStroke(dp(1), CARD_EDGE);
+        }
         b.setBackground(bg);
-        b.setElevation(dp(2));
-        b.setPadding(dp(3), 0, dp(3), 0);
-        b.setFocusable(false);
-        b.setFocusableInTouchMode(false);
+        b.setPadding(0, 0, 0, 0);
+
+        int size = primary ? dp(68) : dp(54);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(size, size);
+        p.setMargins(dp(6), 0, dp(6), 0);
+        p.gravity = Gravity.CENTER_VERTICAL;
+        row.addView(b, p);
+
+        b.setOnClickListener(v -> sendCommand(action));
+        b.setOnTouchListener((v, e) -> {
+            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
+                b.setAlpha(0.6f);
+            else b.setAlpha(1f);
+            return false;
+        });
+    }
+
+    /** Pill action button (Back / Home / Vol / Mute). */
+    private void addActionButton(LinearLayout row, String label,
+                                 String action, boolean primary) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(14);
+        b.setTextColor(primary ? Color.WHITE : TEXT);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(primary ? BLUE : Color.argb(80, 61, 123, 255));
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), primary ? BLUE : CARD_EDGE);
+        b.setBackground(bg);
+        b.setPadding(dp(4), 0, dp(4), 0);
+
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
+        p.setMargins(dp(4), 0, dp(4), 0);
+        row.addView(b, p);
+
+        b.setOnClickListener(v -> sendCommand(action));
+        b.setOnTouchListener((v, e) -> {
+            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
+                b.setAlpha(0.55f);
+            else b.setAlpha(1f);
+            return false;
+        });
+    }
+
+    /** Filled primary CTA button. */
+    private Button accentButton(String text, boolean filled) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(15);
+        b.setTextColor(filled ? Color.WHITE : BLUE);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(filled ? BLUE : Color.TRANSPARENT);
+        bg.setCornerRadius(dp(16));
+        if (!filled) bg.setStroke(dp(1), BLUE);
+        b.setBackground(bg);
+
         return b;
+    }
+
+    /** Ghost / destructive secondary button. */
+    private Button ghostButton(String text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(13);
+        b.setTextColor(MUTED);
+        b.setAllCaps(false);
+        b.setSingleLine(true);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.TRANSPARENT);
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), GHOST);
+        b.setBackground(bg);
+
+        return b;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  HELPERS
+    // ══════════════════════════════════════════════════════════════════════
+
+    private void sendCommand(String action) {
+        if (deviceId == null || remoteToken == null) {
+            if (status != null) status.setText("Pair with a TV first.");
+            return;
+        }
+        RemoteApi.sendRemoteCommand(action);
+        if (status != null) status.setText("↑ " + action.replace('_', ' ').toLowerCase());
+    }
+
+    private TextView label(String text, int sp, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        return t;
+    }
+
+    private LinearLayout hbox(int gravity) {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(gravity);
+        return l;
+    }
+
+    private LinearLayout vbox() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        return l;
+    }
+
+    private LinearLayout row() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
+        return l;
     }
 
     private void spacer(LinearLayout row) {
@@ -514,7 +742,8 @@ public class MainActivity extends Activity {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    @Override protected void onDestroy() {
+    @Override
+    protected void onDestroy() {
         worker.shutdown();
         super.onDestroy();
     }
