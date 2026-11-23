@@ -240,7 +240,7 @@ public class MainActivity extends Activity {
         if (!connected) { setStatus("Connect to your TV first", false); return; }
         worker.execute(() -> {
             try {
-                remote.command("input keyevent " + keyCode);
+                remote.sendKey(keyCode);
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     connected = false; connectButton.setText("Connect");
