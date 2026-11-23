@@ -1,20 +1,23 @@
 package com.cassimtv.remote;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.LayerDrawable;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -31,30 +34,32 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
 
-    // ── Palette ──────────────────────────────────────────────────────────
-    private static final int BG        = Color.rgb(6,  10,  20);    // near-black base
-    private static final int SURFACE   = Color.rgb(14, 22,  40);    // slightly lifted
-    private static final int CARD      = Color.rgb(22, 35,  65);    // glass card
-    private static final int CARD_EDGE = Color.rgb(38, 60, 110);    // card border highlight
-    private static final int BLUE      = Color.rgb(61, 123, 255);   // primary accent
-    private static final int BLUE_DIM  = Color.rgb(29,  60, 130);   // pressed / secondary
-    private static final int TEAL      = Color.rgb(77, 255, 195);   // positive state
-    private static final int TEXT      = Color.rgb(240, 245, 255);  // primary text
-    private static final int MUTED     = Color.rgb(120, 145, 190);  // secondary text
-    private static final int GHOST     = Color.rgb(55,  80, 125);   // disabled / ghost
+    // ── Palette ──────────────────────────────────────────────────────────────
+    private static final int BG        = Color.rgb(5,   8,  18);
+    private static final int CARD      = Color.rgb(16,  25,  48);
+    private static final int CARD2     = Color.rgb(22,  34,  64);
+    private static final int BORDER    = Color.rgb(40,  65, 120);
+    private static final int BLUE      = Color.rgb(55, 120, 255);
+    private static final int BLUE_GLOW = Color.argb(60, 55, 120, 255);
+    private static final int BLUE_DIM  = Color.rgb(28,  58, 130);
+    private static final int TEAL      = Color.rgb(60, 220, 170);
+    private static final int TEXT      = Color.rgb(235, 242, 255);
+    private static final int MUTED     = Color.rgb(110, 138, 185);
+    private static final int GHOST     = Color.rgb(50,  72, 115);
+    private static final int RED       = Color.rgb(255,  70,  70);
 
-    // ── State ─────────────────────────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────────────────────────
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private LinearLayout  page;
-    private TextView      status;
-    private TextView      volumeReadout;
-    private TextView      muteReadout;
-    private ProgressBar   volumeProgress;
-    private String        deviceId;
-    private String        remoteToken;
-    private String        pairingCode;
+    private LinearLayout page;
+    private TextView     status;
+    private TextView     volumeReadout;
+    private TextView     muteReadout;
+    private ProgressBar  volumeProgress;
+    private String       deviceId;
+    private String       remoteToken;
+    private String       pairingCode;
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -83,154 +88,130 @@ public class MainActivity extends Activity {
         else showHome();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
     //  SCREENS
-    // ══════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
 
     private void showHome() {
         basePage();
 
-        // ── Logo / wordmark ──────────────────────────────────────────────
-        LinearLayout logoRow = hbox(Gravity.CENTER);
-        LinearLayout.LayoutParams lp = params(-2, -2);
-        lp.topMargin = dp(16);
-        page.addView(logoRow, lp);
+        // ── Branding ─────────────────────────────────────────────────────────
+        LinearLayout brandRow = hbox(Gravity.CENTER);
+        LinearLayout.LayoutParams brp = params(-2, -2);
+        brp.topMargin = dp(8);
+        page.addView(brandRow, brp);
 
-        View dot = new View(this);
-        GradientDrawable dotBg = new GradientDrawable();
-        dotBg.setShape(GradientDrawable.OVAL);
-        dotBg.setColor(BLUE);
-        dot.setBackground(dotBg);
-        logoRow.addView(dot, new LinearLayout.LayoutParams(dp(8), dp(8)));
+        View dot = ovalView(dp(7), dp(7), TEAL);
+        brandRow.addView(dot, new LinearLayout.LayoutParams(dp(7), dp(7)));
 
-        TextView wordmark = label("CASSIM TV", 11, BLUE);
-        wordmark.setLetterSpacing(0.22f);
-        LinearLayout.LayoutParams wp = params(-2, -2);
-        wp.leftMargin = dp(8);
-        logoRow.addView(wordmark, wp);
+        TextView brand = tv("  CASSIM TV", 11, BLUE);
+        brand.setLetterSpacing(0.20f);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        brandRow.addView(brand);
 
-        // ── Hero text ────────────────────────────────────────────────────
+        // ── Hero ──────────────────────────────────────────────────────────────
         TextView hero = new TextView(this);
         hero.setText("One app.\nTwo roles.");
-        hero.setTextSize(38);
+        hero.setTextSize(40);
         hero.setTextColor(TEXT);
         hero.setTypeface(Typeface.DEFAULT_BOLD);
         hero.setGravity(Gravity.CENTER);
-        hero.setLineSpacing(dp(4), 1f);
+        hero.setLineSpacing(dp(2), 1f);
         LinearLayout.LayoutParams hp = params(-1, -2);
-        hp.topMargin = dp(22);
+        hp.topMargin = dp(20);
         page.addView(hero, hp);
 
-        TextView sub = label("Set this device as a TV receiver\nor use it as a wireless remote.", 14, MUTED);
+        TextView sub = tv("Set this device as a TV receiver\nor control your TV as a remote.", 14, MUTED);
         sub.setGravity(Gravity.CENTER);
         sub.setLineSpacing(dp(3), 1f);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(10);
         page.addView(sub, sp);
 
-        // ── Role cards ───────────────────────────────────────────────────
-        View spacer = new View(this);
-        page.addView(spacer, params(1, dp(32)));
+        page.addView(spacerV(dp(28)));
 
-        addRoleCard(
-            "Television",
-            "Display a pairing code and accept remote commands from your phone.",
-            "▣",
-            () -> {
-                android.content.SharedPreferences p =
-                        getSharedPreferences("tv_settings", MODE_PRIVATE);
-                String id  = p.getString("device_id", null);
-                String tok = p.getString("receiver_token", null);
-                if (id != null && tok != null) showExistingTv(id, tok);
-                else createPairing();
-            }
-        );
+        // ── Role cards ────────────────────────────────────────────────────────
+        roleCard("Television",
+                "Show a pairing code and accept commands from your phone.",
+                "▣",
+                () -> {
+                    android.content.SharedPreferences p =
+                            getSharedPreferences("tv_settings", MODE_PRIVATE);
+                    String id  = p.getString("device_id", null);
+                    String tok = p.getString("receiver_token", null);
+                    if (id != null && tok != null) showExistingTv(id, tok);
+                    else createPairing();
+                });
 
-        addRoleCard(
-            "Remote",
-            "Enter the pairing code shown on your television.",
-            "◉",
-            this::showRemotePair
-        );
+        roleCard("Remote",
+                "Enter the pairing code shown on your television.",
+                "◉",
+                this::showRemotePair);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
-    private void addRoleCard(String title, String desc, String icon, Runnable click) {
-        LinearLayout card = glassCard();
+    private void roleCard(String title, String desc, String icon, Runnable action) {
+        LinearLayout card = glassCard(dp(20));
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(20), dp(20), dp(20), dp(20));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
 
         LinearLayout.LayoutParams cp = params(-1, -2);
         cp.topMargin = dp(14);
         page.addView(card, cp);
 
-        // Icon badge
-        FrameLayout badge = new FrameLayout(this);
-        GradientDrawable badgeBg = new GradientDrawable();
-        badgeBg.setShape(GradientDrawable.OVAL);
-        badgeBg.setColor(BLUE_DIM);
-        badge.setBackground(badgeBg);
-        badge.setPadding(dp(14), dp(14), dp(14), dp(14));
+        // Icon circle
+        FrameLayout iconCircle = new FrameLayout(this);
+        GradientDrawable circleBg = new GradientDrawable();
+        circleBg.setShape(GradientDrawable.OVAL);
+        circleBg.setColor(BLUE_DIM);
+        circleBg.setStroke(dp(1), BORDER);
+        iconCircle.setBackground(circleBg);
+        int circleSize = dp(54);
+        LinearLayout.LayoutParams icp = new LinearLayout.LayoutParams(circleSize, circleSize);
+        icp.gravity = Gravity.CENTER_VERTICAL;
 
-        TextView iconView = new TextView(this);
-        iconView.setText(icon);
-        iconView.setTextSize(22);
-        iconView.setTextColor(BLUE);
-        iconView.setGravity(Gravity.CENTER);
-        badge.addView(iconView, new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER));
-        card.addView(badge, new LinearLayout.LayoutParams(dp(60), dp(60)));
+        TextView iconTv = new TextView(this);
+        iconTv.setText(icon);
+        iconTv.setTextSize(22);
+        iconTv.setTextColor(BLUE);
+        iconTv.setGravity(Gravity.CENTER);
+        iconCircle.addView(iconTv, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        card.addView(iconCircle, icp);
 
-        // Text block
-        LinearLayout textBlock = vbox();
-        LinearLayout.LayoutParams tbp = new LinearLayout.LayoutParams(0, -2, 1);
-        tbp.leftMargin = dp(16);
+        // Text
+        LinearLayout textCol = vbox();
+        LinearLayout.LayoutParams tcp = new LinearLayout.LayoutParams(0, -2, 1);
+        tcp.leftMargin = dp(16);
 
-        TextView titleView = label(title, 17, TEXT);
-        titleView.setTypeface(Typeface.DEFAULT_BOLD);
-        textBlock.addView(titleView);
+        TextView titleTv = tv(title, 17, TEXT);
+        titleTv.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(titleTv);
 
-        TextView descView = label(desc, 13, MUTED);
-        descView.setLineSpacing(dp(2), 1f);
+        TextView descTv = tv(desc, 13, MUTED);
+        descTv.setLineSpacing(dp(2), 1f);
         LinearLayout.LayoutParams dvp = params(-1, -2);
         dvp.topMargin = dp(4);
-        textBlock.addView(descView, dvp);
-
-        card.addView(textBlock, tbp);
+        textCol.addView(descTv, dvp);
+        card.addView(textCol, tcp);
 
         // Chevron
-        TextView chev = label("›", 26, GHOST);
-        chev.setPadding(dp(10), 0, 0, 0);
+        TextView chev = tv("›", 28, GHOST);
+        chev.setPadding(dp(8), 0, 0, 0);
         card.addView(chev);
 
-        card.setClickable(true);
-        card.setFocusable(true);
-        card.setOnClickListener(v -> click.run());
-
-        // Pressed state
-        card.setOnTouchListener((v, e) -> {
-            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
-                card.setAlpha(0.75f);
-            else if (e.getAction() == android.view.MotionEvent.ACTION_UP
-                  || e.getAction() == android.view.MotionEvent.ACTION_CANCEL) {
-                card.setAlpha(1f);
-                if (e.getAction() == android.view.MotionEvent.ACTION_UP)
-                    click.run();
-            }
-            return true;
-        });
-        card.setClickable(false); // handled by touch
+        touchFeedback(card, action);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void createPairing() {
         basePage();
         screenHeader("Television", "Waiting for remote…",
                 "Show this code to your phone app to pair.");
 
-        status = label("Reaching Cassim relay…", 13, MUTED);
+        status = tv("Reaching Cassim relay…", 13, MUTED);
         status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(24);
@@ -238,9 +219,7 @@ public class MainActivity extends Activity {
 
         worker.execute(() -> {
             try {
-                JSONObject result = RemoteApi.post(
-                        "/tv/pair/start", new JSONObject(), null);
-
+                JSONObject result = RemoteApi.post("/tv/pair/start", new JSONObject(), null);
                 deviceId    = result.getString("device_id");
                 pairingCode = result.getString("pairing_code");
                 String receiverToken = result.getString("receiver_token");
@@ -253,30 +232,28 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     status.setText("Enter this code on your phone.");
 
-                    // ── PIN card ─────────────────────────────────────────
-                    LinearLayout pinCard = glassCard();
+                    LinearLayout pinCard = glassCard(dp(20));
                     pinCard.setGravity(Gravity.CENTER);
-                    LinearLayout.LayoutParams pcp = params(-1, dp(140));
+                    LinearLayout.LayoutParams pcp = params(-1, dp(130));
                     pcp.topMargin = dp(20);
                     page.addView(pinCard, pcp);
 
-                    TextView pinLabel = label("PAIRING CODE", 10, MUTED);
+                    TextView pinLabel = tv("PAIRING CODE", 10, MUTED);
                     pinLabel.setLetterSpacing(0.14f);
                     pinCard.addView(pinLabel);
 
                     TextView pinView = new TextView(this);
                     pinView.setText(pairingCode);
-                    pinView.setTextSize(52);
+                    pinView.setTextSize(54);
                     pinView.setTextColor(TEAL);
                     pinView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
                     pinView.setGravity(Gravity.CENTER);
-                    pinView.setLetterSpacing(0.14f);
+                    pinView.setLetterSpacing(0.12f);
                     LinearLayout.LayoutParams pvp = params(-1, -2);
                     pvp.topMargin = dp(6);
                     pinCard.addView(pinView, pvp);
 
-                    // ── Accessibility button ──────────────────────────────
-                    Button access = accentButton("Enable TV Navigation", false);
+                    Button access = pillButton("Enable TV Navigation", false);
                     LinearLayout.LayoutParams ap = params(-1, dp(54));
                     ap.topMargin = dp(24);
                     page.addView(access, ap);
@@ -296,9 +273,10 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Existing receiver management screen retained from the previous app version.
+
+    // Keep the existing receiver identity and allow another phone to pair.
     private void showExistingTv(String savedId, String savedToken) {
         Intent service = new Intent(this, TvReceiverService.class);
         service.putExtra("device_id", savedId);
@@ -310,23 +288,23 @@ public class MainActivity extends Activity {
         screenHeader("Television", "Your TV is ready",
                 "This receiver keeps the same identity. Pair additional phones whenever you like.");
 
-        LinearLayout card = glassCard();
+        LinearLayout card = glassCard(dp(20));
         card.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams cp = params(-1, dp(100));
         cp.topMargin = dp(25);
         page.addView(card, cp);
 
-        TextView ready = label("●  RECEIVER REGISTERED", 15, TEAL);
+        TextView ready = tv("●  RECEIVER REGISTERED", 15, TEAL);
         ready.setTypeface(Typeface.DEFAULT_BOLD);
         card.addView(ready);
 
-        Button add = accentButton("Pair another phone", true);
+        Button add = pillButton("Pair another phone", true);
         LinearLayout.LayoutParams ap = params(-1, dp(54));
         ap.topMargin = dp(18);
         page.addView(add, ap);
         add.setOnClickListener(v -> createAdditionalPairing(savedId, savedToken));
 
-        Button back = ghostButton("Back");
+        Button back = ghostBtn("Back");
         LinearLayout.LayoutParams bp = params(-1, dp(48));
         bp.topMargin = dp(10);
         page.addView(back, bp);
@@ -338,7 +316,7 @@ public class MainActivity extends Activity {
         screenHeader("Add a remote", "Pair another phone",
                 "Enter this one-time code on the next phone. Existing remotes stay paired.");
 
-        status = label("Generating secure pairing code…", 14, MUTED);
+        status = tv("Generating secure pairing code…", 14, MUTED);
         status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(25);
@@ -354,31 +332,32 @@ public class MainActivity extends Activity {
 
                 runOnUiThread(() -> {
                     status.setText("Enter this code on another phone");
-                    LinearLayout pinCard = glassCard();
+                    LinearLayout pinCard = glassCard(dp(20));
                     pinCard.setGravity(Gravity.CENTER);
                     LinearLayout.LayoutParams pcp = params(-1, dp(130));
                     pcp.topMargin = dp(18);
                     page.addView(pinCard, pcp);
 
-                    TextView pin = label(code, 48, TEAL);
+                    TextView pin = tv(code, 48, TEAL);
                     pin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
                     pin.setGravity(Gravity.CENTER);
                     pinCard.addView(pin);
 
-                    TextView expiry = label("Code expires in 5 minutes · Existing phones remain paired", 12, MUTED);
+                    TextView expiry = tv("Code expires in 5 minutes · Existing phones remain paired", 12, MUTED);
                     expiry.setGravity(Gravity.CENTER);
                     LinearLayout.LayoutParams ep = params(-1, -2);
                     ep.topMargin = dp(12);
                     page.addView(expiry, ep);
 
-                    Button done = ghostButton("Done");
-                    LinearLayout.LayoutParams dp = params(-1, dp(50));
-                    dp.topMargin = dp(24);
-                    page.addView(done, dp);
+                    Button done = ghostBtn("Done");
+                    LinearLayout.LayoutParams dpParams = params(-1, dp(50));
+                    dpParams.topMargin = dp(24);
+                    page.addView(done, dpParams);
                     done.setOnClickListener(v -> showExistingTv(savedId, savedToken));
                 });
             } catch (Exception e) {
-                String message = e.getMessage() == null ? "Could not generate pairing code." : e.getMessage();
+                String message = e.getMessage() == null
+                        ? "Could not generate pairing code." : e.getMessage();
                 runOnUiThread(() -> status.setText(message));
             }
         });
@@ -389,8 +368,7 @@ public class MainActivity extends Activity {
         screenHeader("Connect", "Enter your PIN",
                 "Type the six-digit code shown on your television.");
 
-        // ── PIN input ────────────────────────────────────────────────────
-        LinearLayout inputCard = glassCard();
+        LinearLayout inputCard = glassCard(dp(20));
         inputCard.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams icp = params(-1, -2);
         icp.topMargin = dp(28);
@@ -406,47 +384,39 @@ public class MainActivity extends Activity {
         pin.setTextSize(36);
         pin.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         pin.setInputType(InputType.TYPE_CLASS_NUMBER);
-        pin.setLetterSpacing(0.22f);
+        pin.setLetterSpacing(0.20f);
         pin.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
         inputCard.addView(pin, params(-1, dp(80)));
 
-        status = label("", 13, Color.rgb(255, 90, 90));
+        status = tv("", 13, RED);
         status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams stp = params(-1, -2);
         stp.topMargin = dp(12);
         page.addView(status, stp);
 
-        Button connect = accentButton("Connect to TV", true);
+        Button connect = pillButton("Connect to TV", true);
         LinearLayout.LayoutParams bp = params(-1, dp(56));
         bp.topMargin = dp(16);
         page.addView(connect, bp);
 
         connect.setOnClickListener(v -> {
             String code = pin.getText().toString().trim();
-            if (!code.matches("\\d{6}")) {
-                status.setText("Need all six digits.");
-                return;
-            }
+            if (!code.matches("\\d{6}")) { status.setText("Need all six digits."); return; }
             connect.setEnabled(false);
             connect.setText("Pairing…");
             status.setText("");
-
             worker.execute(() -> {
                 try {
                     JSONObject body = new JSONObject();
                     body.put("code", code);
                     JSONObject result = RemoteApi.post("/tv/pair/claim", body, null);
-
                     deviceId    = result.getString("device_id");
                     remoteToken = result.getString("remote_token");
-
                     getSharedPreferences("remote_settings", MODE_PRIVATE).edit()
                             .putString("device_id", deviceId)
                             .putString("remote_token", remoteToken)
                             .apply();
-
                     runOnUiThread(this::showRemote);
-
                 } catch (Exception e) {
                     runOnUiThread(() -> {
                         connect.setEnabled(true);
@@ -458,7 +428,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ─────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void showRemote() {
         RemoteApi.setStatusListener(new RemoteApi.StatusListener() {
@@ -472,7 +442,7 @@ public class MainActivity extends Activity {
                     }
                     if (muteReadout != null) {
                         muteReadout.setText(muted ? "Muted" : "Live");
-                        muteReadout.setTextColor(muted ? Color.rgb(255, 90, 90) : TEAL);
+                        muteReadout.setTextColor(muted ? RED : TEAL);
                     }
                 });
             }
@@ -482,145 +452,282 @@ public class MainActivity extends Activity {
         });
 
         RemoteApi.connectRemote(deviceId, remoteToken);
-        basePage();
 
-        // ── Header strip ─────────────────────────────────────────────────
-        LinearLayout header = hbox(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams hdp = params(-1, dp(44));
-        hdp.topMargin = dp(8);
-        page.addView(header, hdp);
+        // ── Full-screen non-scrolling layout ──────────────────────────────────
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(BG);
 
-        View led = new View(this);
-        GradientDrawable ledBg = new GradientDrawable();
-        ledBg.setShape(GradientDrawable.OVAL);
-        ledBg.setColor(TEAL);
-        led.setBackground(ledBg);
-        header.addView(led, new LinearLayout.LayoutParams(dp(7), dp(7)));
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dp(16), dp(14), dp(16), dp(16));
 
-        TextView tvLabel = label("  Your Television", 15, TEXT);
-        tvLabel.setTypeface(Typeface.DEFAULT_BOLD);
-        header.addView(tvLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(layout, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
 
-        status = label("Connecting…", 11, MUTED);
-        header.addView(status);
+        // ── Top bar: branding + status ────────────────────────────────────────
+        LinearLayout topBar = hbox(Gravity.CENTER_VERTICAL);
+        layout.addView(topBar, params(-1, dp(40)));
 
-        // ── Volume strip ─────────────────────────────────────────────────
-        LinearLayout volCard = glassCard();
+        // Branding pill
+        LinearLayout brandPill = hbox(Gravity.CENTER_VERTICAL);
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(CARD);
+        pillBg.setCornerRadius(dp(20));
+        pillBg.setStroke(dp(1), BORDER);
+        brandPill.setBackground(pillBg);
+        brandPill.setPadding(dp(10), dp(5), dp(14), dp(5));
+
+        View led = ovalView(dp(7), dp(7), TEAL);
+        brandPill.addView(led, new LinearLayout.LayoutParams(dp(7), dp(7)));
+
+        TextView brandTv = tv("  CASSIM TV · REMOTE", 11, TEXT);
+        brandTv.setLetterSpacing(0.14f);
+        brandTv.setTypeface(Typeface.DEFAULT_BOLD);
+        brandPill.addView(brandTv);
+        topBar.addView(brandPill);
+
+        topBar.addView(spacerH());
+
+        status = tv("Connecting…", 11, MUTED);
+        topBar.addView(status);
+
+        // ── Volume card ───────────────────────────────────────────────────────
+        LinearLayout volCard = glassCard(dp(16));
         volCard.setOrientation(LinearLayout.HORIZONTAL);
         volCard.setGravity(Gravity.CENTER_VERTICAL);
-        volCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        volCard.setPadding(dp(16), dp(12), dp(16), dp(12));
         LinearLayout.LayoutParams vcp = params(-1, -2);
-        vcp.topMargin = dp(14);
-        page.addView(volCard, vcp);
+        vcp.topMargin = dp(10);
+        layout.addView(volCard, vcp);
 
-        LinearLayout volText = vbox();
-        TextView volTitle = label("Volume", 11, MUTED);
-        volText.addView(volTitle);
-        volumeReadout = label("— / —", 20, TEXT);
+        LinearLayout volLeft = vbox();
+        TextView volLabel = tv("VOLUME", 9, MUTED);
+        volLabel.setLetterSpacing(0.14f);
+        volLeft.addView(volLabel);
+        volumeReadout = tv("— / —", 22, TEXT);
         volumeReadout.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        volText.addView(volumeReadout);
-        volCard.addView(volText, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams vrp = params(-2, -2);
+        vrp.topMargin = dp(2);
+        volLeft.addView(volumeReadout, vrp);
+        volCard.addView(volLeft, new LinearLayout.LayoutParams(0, -2, 1));
 
-        muteReadout = label("Live", 13, TEAL);
+        muteReadout = tv("Live", 13, TEAL);
         muteReadout.setTypeface(Typeface.DEFAULT_BOLD);
         volCard.addView(muteReadout);
+
+        // Volume track — inline, inside a container below the card
+        LinearLayout volTrackWrap = new LinearLayout(this);
+        volTrackWrap.setOrientation(LinearLayout.VERTICAL);
+        volTrackWrap.setPadding(dp(16), dp(6), dp(16), dp(2));
 
         volumeProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         volumeProgress.setProgressTintList(
                 android.content.res.ColorStateList.valueOf(BLUE));
-        LinearLayout.LayoutParams prp = params(-1, dp(3));
-        prp.topMargin = dp(8);
-        page.addView(volumeProgress, prp);
+        volumeProgress.setProgressBackgroundTintList(
+                android.content.res.ColorStateList.valueOf(GHOST));
+        LinearLayout.LayoutParams prp = params(-1, dp(4));
+        prp.topMargin = dp(0);
+        volTrackWrap.addView(volumeProgress, prp);
+        LinearLayout.LayoutParams twp = params(-1, -2);
+        twp.topMargin = dp(0);
+        layout.addView(volTrackWrap, twp);
 
-        // ── D-pad ────────────────────────────────────────────────────────
-        LinearLayout dpadCard = glassCard();
+        // ── D-pad card ────────────────────────────────────────────────────────
+        LinearLayout dpadCard = glassCard(dp(22));
         dpadCard.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams dcp = params(-1, -2);
-        dcp.topMargin = dp(16);
-        page.addView(dpadCard, dcp);
+        LinearLayout.LayoutParams dcp = params(-1, 0);
+        dcp.topMargin = dp(10);
+        dcp.weight = 1.5f;
+        layout.addView(dpadCard, dcp);
 
-        LinearLayout up = row();
-        dpadCard.addView(up, params(-1, dp(60)));
-        spacer(up);
-        addDpadButton(up, "▲", "DPAD_UP", false);
-        spacer(up);
+        // Up row
+        LinearLayout upRow = hbox(Gravity.CENTER);
+        dpadCard.addView(upRow, params(-1, dp(62)));
+        upRow.addView(dpadBtn("▲", "DPAD_UP", false));
 
-        LinearLayout mid = row();
-        dpadCard.addView(mid, params(-1, dp(72)));
-        addDpadButton(mid, "◀", "DPAD_LEFT", false);
-        addDpadButton(mid, "OK",  "OK",        true);
-        addDpadButton(mid, "▶", "DPAD_RIGHT", false);
+        // Middle row
+        LinearLayout midRow = hbox(Gravity.CENTER);
+        dpadCard.addView(midRow, params(-1, dp(72)));
+        midRow.addView(dpadBtn("◀", "DPAD_LEFT", false));
+        midRow.addView(spacerH2(dp(10)));
+        midRow.addView(dpadBtn("OK", "OK", true));
+        midRow.addView(spacerH2(dp(10)));
+        midRow.addView(dpadBtn("▶", "DPAD_RIGHT", false));
 
-        LinearLayout dn = row();
-        dpadCard.addView(dn, params(-1, dp(60)));
-        spacer(dn);
-        addDpadButton(dn, "▼", "DPAD_DOWN", false);
-        spacer(dn);
+        // Down row
+        LinearLayout dnRow = hbox(Gravity.CENTER);
+        dpadCard.addView(dnRow, params(-1, dp(62)));
+        dnRow.addView(dpadBtn("▼", "DPAD_DOWN", false));
 
-        // ── Quick actions ────────────────────────────────────────────────
-        LinearLayout quick = glassCard();
-        quick.setOrientation(LinearLayout.HORIZONTAL);
-        quick.setPadding(dp(10), dp(10), dp(10), dp(10));
-        LinearLayout.LayoutParams qp = params(-1, dp(62));
-        qp.topMargin = dp(14);
-        page.addView(quick, qp);
+        // ── Quick actions row ─────────────────────────────────────────────────
+        LinearLayout quickCard = glassCard(dp(18));
+        quickCard.setOrientation(LinearLayout.HORIZONTAL);
+        quickCard.setPadding(dp(10), dp(10), dp(10), dp(10));
+        LinearLayout.LayoutParams qcp = params(-1, 0);
+        qcp.topMargin = dp(10);
+        qcp.weight = 0.6f;
+        layout.addView(quickCard, qcp);
 
-        addActionButton(quick, "Back",  "BACK",  false);
-        addActionButton(quick, "Home",  "HOME",  false);
-        addActionButton(quick, "⏻",    "POWER", false);
+        quickCard.addView(actionBtn("Back",  "BACK",  false), new LinearLayout.LayoutParams(0, -1, 1));
+        quickCard.addView(spacerH2(dp(8)));
+        quickCard.addView(actionBtn("Home",  "HOME",  false), new LinearLayout.LayoutParams(0, -1, 1));
+        quickCard.addView(spacerH2(dp(8)));
+        quickCard.addView(actionBtn("Power", "POWER", false), new LinearLayout.LayoutParams(0, -1, 1));
 
-        // ── Volume row ───────────────────────────────────────────────────
-        LinearLayout volRow = glassCard();
+        // ── Volume row ────────────────────────────────────────────────────────
+        LinearLayout volRow = glassCard(dp(18));
         volRow.setOrientation(LinearLayout.HORIZONTAL);
         volRow.setPadding(dp(10), dp(10), dp(10), dp(10));
-        LinearLayout.LayoutParams vrp = params(-1, dp(62));
-        vrp.topMargin = dp(10);
-        page.addView(volRow, vrp);
+        LinearLayout.LayoutParams vrp2 = params(-1, 0);
+        vrp2.topMargin = dp(10);
+        vrp2.weight = 0.6f;
+        layout.addView(volRow, vrp2);
 
-        addActionButton(volRow, "−",    "VOLUME_DOWN", false);
-        addActionButton(volRow, "Mute", "MUTE",        false);
-        addActionButton(volRow, "+",    "VOLUME_UP",   false);
+        volRow.addView(actionBtn("−",    "VOLUME_DOWN", false), new LinearLayout.LayoutParams(0, -1, 1));
+        volRow.addView(spacerH2(dp(8)));
+        volRow.addView(actionBtn("Mute", "MUTE",        false), new LinearLayout.LayoutParams(0, -1, 1));
+        volRow.addView(spacerH2(dp(8)));
+        volRow.addView(actionBtn("+",    "VOLUME_UP",   false), new LinearLayout.LayoutParams(0, -1, 1));
 
-        // ── Disconnect ───────────────────────────────────────────────────
-        Button unpair = ghostButton("Disconnect this phone");
-        LinearLayout.LayoutParams up2 = params(-1, dp(48));
-        up2.topMargin = dp(24);
-        up2.bottomMargin = dp(8);
-        page.addView(unpair, up2);
+        // ── Disconnect ────────────────────────────────────────────────────────
+        Button unpair = ghostBtn("Disconnect this phone");
+        LinearLayout.LayoutParams up2 = params(-1, dp(44));
+        up2.topMargin = dp(10);
+        layout.addView(unpair, up2);
 
         unpair.setOnClickListener(v -> {
             RemoteApi.setStatusListener(null);
-            getSharedPreferences("remote_settings", MODE_PRIVATE)
-                    .edit().clear().apply();
+            getSharedPreferences("remote_settings", MODE_PRIVATE).edit().clear().apply();
             deviceId    = null;
             remoteToken = null;
             showHome();
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    //  UI COMPONENTS
-    // ══════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════════
+    //  BUTTON FACTORIES
+    // ══════════════════════════════════════════════════════════════════════════
 
-    /** Full-screen scroll shell. Sets contentView. */
+    /** Large circular D-pad button. */
+    private View dpadBtn(String label, String action, boolean primary) {
+        TextView b = new TextView(this);
+        b.setText(label);
+        b.setTextSize(primary ? 16 : 22);
+        b.setTextColor(primary ? Color.WHITE : TEXT);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+
+        int size = primary ? dp(72) : dp(58);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(size, size);
+        p.setMargins(dp(10), 0, dp(10), 0);
+        p.gravity = Gravity.CENTER_VERTICAL;
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        if (primary) {
+            bg.setColor(BLUE);
+        } else {
+            bg.setColor(CARD2);
+            bg.setStroke(dp(1), BORDER);
+        }
+        b.setBackground(bg);
+        b.setLayoutParams(p);
+
+        b.setClickable(true);
+        b.setFocusable(true);
+        b.setOnClickListener(v -> sendCommand(action));
+        b.setOnTouchListener((v, e) -> {
+            if (e.getAction() == MotionEvent.ACTION_DOWN)       b.setAlpha(0.55f);
+            else if (e.getAction() == MotionEvent.ACTION_UP
+                  || e.getAction() == MotionEvent.ACTION_CANCEL) b.setAlpha(1f);
+            return false;
+        });
+        return b;
+    }
+
+    /** Rounded pill button for quick-action rows. */
+    private View actionBtn(String label, String action, boolean primary) {
+        TextView b = new TextView(this);
+        b.setText(label);
+        b.setTextSize(14);
+        b.setTextColor(primary ? Color.WHITE : TEXT);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(primary ? BLUE : CARD2);
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), primary ? BLUE : BORDER);
+        b.setBackground(bg);
+
+        b.setClickable(true);
+        b.setFocusable(true);
+        b.setOnClickListener(v -> sendCommand(action));
+        b.setOnTouchListener((v, e) -> {
+            if (e.getAction() == MotionEvent.ACTION_DOWN)        b.setAlpha(0.5f);
+            else if (e.getAction() == MotionEvent.ACTION_UP
+                   || e.getAction() == MotionEvent.ACTION_CANCEL) b.setAlpha(1f);
+            return false;
+        });
+        return b;
+    }
+
+    /** Filled or outlined CTA pill. */
+    private Button pillButton(String text, boolean filled) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(15);
+        b.setTextColor(filled ? Color.WHITE : BLUE);
+        b.setAllCaps(false);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(filled ? BLUE : Color.TRANSPARENT);
+        bg.setCornerRadius(dp(16));
+        if (!filled) bg.setStroke(dp(1), BLUE);
+        b.setBackground(bg);
+        return b;
+    }
+
+    /** Ghost / destructive secondary button. */
+    private Button ghostBtn(String text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextSize(13);
+        b.setTextColor(MUTED);
+        b.setAllCaps(false);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(false);
+        b.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.TRANSPARENT);
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), GHOST);
+        b.setBackground(bg);
+        return b;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  LAYOUT HELPERS
+    // ══════════════════════════════════════════════════════════════════════════
+
     private void basePage() {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(BG);
-        scroll.setClipToPadding(false);
-
         page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(dp(20), dp(28), dp(20), dp(32));
-
+        page.setPadding(dp(18), dp(24), dp(18), dp(28));
         scroll.addView(page);
         setContentView(scroll);
     }
 
-    /** Screen-level header block (eyebrow, big title, subtitle). */
     private void screenHeader(String eyebrow, String title, String subtitle) {
-        TextView ew = label(eyebrow.toUpperCase(), 10, MUTED);
+        TextView ew = tv(eyebrow.toUpperCase(), 10, MUTED);
         ew.setLetterSpacing(0.16f);
         page.addView(ew);
 
@@ -633,166 +740,46 @@ public class MainActivity extends Activity {
         hp.topMargin = dp(6);
         page.addView(h, hp);
 
-        TextView sub = label(subtitle, 14, MUTED);
+        TextView sub = tv(subtitle, 14, MUTED);
         sub.setLineSpacing(dp(3), 1f);
         LinearLayout.LayoutParams sp = params(-1, -2);
-        sp.topMargin = dp(6);
+        sp.topMargin = dp(5);
         page.addView(sub, sp);
     }
 
-    /** Frosted-glass card container. */
-    private LinearLayout glassCard() {
+    private LinearLayout glassCard(int radius) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(16), dp(16), dp(16));
-
+        box.setPadding(dp(14), dp(14), dp(14), dp(14));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(CARD);
-        bg.setCornerRadius(dp(20));
-        bg.setStroke(dp(1), CARD_EDGE);
+        bg.setCornerRadius(radius);
+        bg.setStroke(dp(1), BORDER);
         box.setBackground(bg);
-
         return box;
     }
 
-    /** D-pad directional / OK button. */
-    private void addDpadButton(LinearLayout row, String label,
-                               String action, boolean primary) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setTextSize(primary ? 15 : 20);
-        b.setTextColor(primary ? Color.WHITE : TEXT);
-        b.setAllCaps(false);
-        b.setSingleLine(true);
-        b.setGravity(Gravity.CENTER);
-        b.setIncludeFontPadding(false);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
+    private View ovalView(int w, int h, int color) {
+        View v = new View(this);
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL);
+        d.setColor(color);
+        v.setBackground(d);
+        v.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+        return v;
+    }
 
-        GradientDrawable bg = new GradientDrawable();
-        if (primary) {
-            bg.setColor(BLUE);
-            bg.setShape(GradientDrawable.OVAL);
-        } else {
-            bg.setColor(Color.TRANSPARENT);
-            bg.setShape(GradientDrawable.OVAL);
-            bg.setStroke(dp(1), CARD_EDGE);
-        }
-        b.setBackground(bg);
-        b.setPadding(0, 0, 0, 0);
-
-        int size = primary ? dp(68) : dp(54);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(size, size);
-        p.setMargins(dp(6), 0, dp(6), 0);
-        p.gravity = Gravity.CENTER_VERTICAL;
-        row.addView(b, p);
-
-        b.setOnClickListener(v -> sendCommand(action));
-        b.setOnTouchListener((v, e) -> {
-            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
-                b.setAlpha(0.6f);
-            else b.setAlpha(1f);
-            return false;
+    private void touchFeedback(View v, Runnable action) {
+        v.setClickable(true);
+        v.setFocusable(true);
+        v.setOnTouchListener((view, e) -> {
+            if (e.getAction() == MotionEvent.ACTION_DOWN)        view.setAlpha(0.72f);
+            else if (e.getAction() == MotionEvent.ACTION_UP) {
+                view.setAlpha(1f);
+                action.run();
+            } else if (e.getAction() == MotionEvent.ACTION_CANCEL) view.setAlpha(1f);
+            return true;
         });
-    }
-
-    /** Pill action button (Back / Home / Vol / Mute). */
-    private void addActionButton(LinearLayout row, String label,
-                                 String action, boolean primary) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setTextSize(14);
-        b.setTextColor(primary ? Color.WHITE : TEXT);
-        b.setAllCaps(false);
-        b.setSingleLine(true);
-        b.setGravity(Gravity.CENTER);
-        b.setIncludeFontPadding(false);
-        b.setMinWidth(0);
-        b.setMinimumWidth(0);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(primary ? BLUE : Color.argb(80, 61, 123, 255));
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), primary ? BLUE : CARD_EDGE);
-        b.setBackground(bg);
-        b.setPadding(dp(4), 0, dp(4), 0);
-
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
-        p.setMargins(dp(4), 0, dp(4), 0);
-        row.addView(b, p);
-
-        b.setOnClickListener(v -> sendCommand(action));
-        b.setOnTouchListener((v, e) -> {
-            if (e.getAction() == android.view.MotionEvent.ACTION_DOWN)
-                b.setAlpha(0.55f);
-            else b.setAlpha(1f);
-            return false;
-        });
-    }
-
-    /** Filled primary CTA button. */
-    private Button accentButton(String text, boolean filled) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextSize(15);
-        b.setTextColor(filled ? Color.WHITE : BLUE);
-        b.setAllCaps(false);
-        b.setSingleLine(true);
-        b.setGravity(Gravity.CENTER);
-        b.setIncludeFontPadding(false);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(filled ? BLUE : Color.TRANSPARENT);
-        bg.setCornerRadius(dp(16));
-        if (!filled) bg.setStroke(dp(1), BLUE);
-        b.setBackground(bg);
-
-        return b;
-    }
-
-    /** Ghost / destructive secondary button. */
-    private Button ghostButton(String text) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextSize(13);
-        b.setTextColor(MUTED);
-        b.setAllCaps(false);
-        b.setSingleLine(true);
-        b.setGravity(Gravity.CENTER);
-        b.setIncludeFontPadding(false);
-        b.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.TRANSPARENT);
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), GHOST);
-        b.setBackground(bg);
-
-        return b;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════
-    //  HELPERS
-    // ══════════════════════════════════════════════════════════════════════
-
-    private void sendCommand(String action) {
-        if (deviceId == null || remoteToken == null) {
-            if (status != null) status.setText("Pair with a TV first.");
-            return;
-        }
-        RemoteApi.sendRemoteCommand(action);
-        if (status != null) status.setText("↑ " + action.replace('_', ' ').toLowerCase());
-    }
-
-    private TextView label(String text, int sp, int color) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(sp);
-        t.setTextColor(color);
-        return t;
     }
 
     private LinearLayout hbox(int gravity) {
@@ -808,16 +795,30 @@ public class MainActivity extends Activity {
         return l;
     }
 
-    private LinearLayout row() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.HORIZONTAL);
-        l.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
-        return l;
+    private TextView tv(String text, int sp, int color) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        return t;
     }
 
-    private void spacer(LinearLayout row) {
+    private View spacerV(int h) {
         View v = new View(this);
-        row.addView(v, new LinearLayout.LayoutParams(0, 1, 1));
+        v.setLayoutParams(new LinearLayout.LayoutParams(-1, h));
+        return v;
+    }
+
+    private View spacerH() {
+        View v = new View(this);
+        v.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1));
+        return v;
+    }
+
+    private View spacerH2(int w) {
+        View v = new View(this);
+        v.setLayoutParams(new LinearLayout.LayoutParams(w, 1));
+        return v;
     }
 
     private LinearLayout.LayoutParams params(int w, int h) {
@@ -826,6 +827,15 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void sendCommand(String action) {
+        if (deviceId == null || remoteToken == null) {
+            if (status != null) status.setText("Pair with a TV first.");
+            return;
+        }
+        RemoteApi.sendRemoteCommand(action);
+        if (status != null) status.setText("sent · " + action.replace('_', ' ').toLowerCase());
     }
 
     @Override
