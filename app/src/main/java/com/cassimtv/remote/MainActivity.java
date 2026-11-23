@@ -41,7 +41,21 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
-        showHome();
+        android.content.SharedPreferences tvPrefs = getSharedPreferences("tv_settings", MODE_PRIVATE);
+        String savedTvId = tvPrefs.getString("device_id", null);
+        String savedReceiverToken = tvPrefs.getString("receiver_token", null);
+        if (savedTvId != null && savedReceiverToken != null) {
+            Intent receiver = new Intent(this, TvReceiverService.class);
+            receiver.putExtra("device_id", savedTvId);
+            receiver.putExtra("receiver_token", savedReceiverToken);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(receiver);
+            else startService(receiver);
+        }
+        android.content.SharedPreferences remotePrefs = getSharedPreferences("remote_settings", MODE_PRIVATE);
+        deviceId = remotePrefs.getString("device_id", null);
+        remoteToken = remotePrefs.getString("remote_token", null);
+        if (deviceId != null && remoteToken != null) showRemote();
+        else showHome();
     }
 
     private void basePage(String eyebrow, String heading, String subtitle) {
@@ -72,7 +86,13 @@ public class MainActivity extends Activity {
         basePage("HOME", "One app. Two roles.", "Choose how you want to use this device.");
         View gap = new View(this);
         page.addView(gap, params(1, dp(30)));
-        addRoleCard("THIS IS TV", "Display a secure pairing PIN and receive commands.", () -> createPairing());
+        addRoleCard("THIS IS TV", "Display a secure pairing PIN and receive commands.", () -> {
+            android.content.SharedPreferences prefs = getSharedPreferences("tv_settings", MODE_PRIVATE);
+            String savedId = prefs.getString("device_id", null);
+            String savedToken = prefs.getString("receiver_token", null);
+            if (savedId != null && savedToken != null) showExistingTv(savedId, savedToken);
+            else createPairing();
+        });
         addRoleCard("THIS IS REMOTE", "Enter the PIN shown on your television.", () -> showRemotePair());
         TextView note = text("Both devices need an internet connection to reach the relay.", 12, MUTED, false);
         note.setGravity(Gravity.CENTER);
@@ -117,6 +137,10 @@ public class MainActivity extends Activity {
                 deviceId = result.getString("device_id");
                 pairingCode = result.getString("pairing_code");
                 String receiverToken = result.getString("receiver_token");
+                getSharedPreferences("tv_settings", MODE_PRIVATE).edit()
+                        .putString("device_id", deviceId)
+                        .putString("receiver_token", receiverToken)
+                        .apply();
                 runOnUiThread(() -> {
                     status.setText("ENTER THIS CODE ON YOUR PHONE");
                     status.setTextColor(MUTED);
@@ -216,7 +240,27 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void showExistingTv(String savedId, String savedToken) {
+        Intent service = new Intent(this, TvReceiverService.class);
+        service.putExtra("device_id", savedId);
+        service.putExtra("receiver_token", savedToken);
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+        else startService(service);
+        basePage("TV RECEIVER", "TV already registered", "This TV keeps its permanent identity. It will reconnect automatically after restarts.");
+        TextView ready = text("●  SAVED PAIRING ACTIVE", 15, Color.rgb(91, 220, 158), true);
+        ready.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rp = params(-1, dp(70));
+        rp.topMargin = dp(25);
+        page.addView(ready, rp);
+        Button back = button("BACK", Color.rgb(42, 57, 82));
+        LinearLayout.LayoutParams bp = params(-1, dp(50));
+        bp.topMargin = dp(20);
+        page.addView(back, bp);
+        back.setOnClickListener(v -> showHome());
+    }
+
     private void showRemote() {
+        RemoteApi.connectRemote(deviceId, remoteToken);
         basePage("CONNECTED REMOTE", "TV Remote", "Commands are relayed securely to your paired TV.");
         LinearLayout badge = card();
         badge.setGravity(Gravity.CENTER);
@@ -305,22 +349,8 @@ public class MainActivity extends Activity {
             status.setText("Pair with a TV first.");
             return;
         }
-        worker.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("device_id", deviceId);
-                body.put("action", action);
-                RemoteApi.post("/tv/command", body, remoteToken);
-                runOnUiThread(() -> {
-                    if (status != null) status.setText("Sent " + action.replace('_', ' '));
-                });
-            } catch (Exception e) {
-                String message = e.getMessage() == null ? "Command failed." : e.getMessage();
-                runOnUiThread(() -> {
-                    if (status != null) status.setText(message);
-                });
-            }
-        });
+        RemoteApi.sendRemoteCommand(action);
+        if (status != null) status.setText("Sent " + action.replace('_', ' '));
     }
 
     private LinearLayout card() {
