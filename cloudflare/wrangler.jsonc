@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cassim-tv-relay",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-23",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "DEVICES", "class_name": "DeviceHub" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DeviceHub", "PairCode"] }
+  ]
+}
