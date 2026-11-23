@@ -184,14 +184,37 @@ public class TvAccessibilityService extends AccessibilityService {
         try {
             AccessibilityNodeInfo focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
             if (focused == null) focused = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
-            if (focused != null && focused.isClickable()) return focused.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            List<AccessibilityNodeInfo> nodes = new ArrayList<>();
-            collectLeafInteractive(root, nodes);
-            AccessibilityNodeInfo nearest = nearestTo(nodes, getScreenCenterX(root), getScreenCenterY(root));
-            boolean clicked = nearest != null && nearest.isClickable()
-                    && nearest.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            for (AccessibilityNodeInfo node : nodes) node.recycle();
-            return clicked;
+            if (focused != null) {
+                AccessibilityNodeInfo target = AccessibilityNodeInfo.obtain(focused);
+                try {
+                    // TV controls often expose focus on a child while the click action
+                    // belongs to a clickable parent container.
+                    while (target != null) {
+                        if (target.isClickable()
+                                && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+                        AccessibilityNodeInfo parent = target.getParent();
+                        target.recycle();
+                        target = parent;
+                    }
+                } finally {
+                    if (target != null) target.recycle();
+                }
+                // A focused label may be inside a clickable card. Search near its
+                // bounds rather than guessing the item at the centre of the screen.
+                Rect focusedBounds = new Rect();
+                focused.getBoundsInScreen(focusedBounds);
+                List<AccessibilityNodeInfo> nodes = new ArrayList<>();
+                collectLeafInteractive(root, nodes);
+                try {
+                    AccessibilityNodeInfo nearest = nearestTo(nodes,
+                            focusedBounds.centerX(), focusedBounds.centerY());
+                    return nearest != null && nearest.isClickable()
+                            && nearest.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                } finally {
+                    for (AccessibilityNodeInfo node : nodes) node.recycle();
+                }
+            }
+            return false;
         } finally {
             root.recycle();
         }
