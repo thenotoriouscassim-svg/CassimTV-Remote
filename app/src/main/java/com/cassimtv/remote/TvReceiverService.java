@@ -34,16 +34,23 @@ public class TvReceiverService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
+        if (intent != null) {
+            deviceId = intent.getStringExtra("device_id");
+            receiverToken = intent.getStringExtra("receiver_token");
         }
-        deviceId = intent.getStringExtra("device_id");
-        receiverToken = intent.getStringExtra("receiver_token");
+        if (deviceId == null || receiverToken == null) {
+            android.content.SharedPreferences prefs = getSharedPreferences("tv_settings", MODE_PRIVATE);
+            deviceId = prefs.getString("device_id", null);
+            receiverToken = prefs.getString("receiver_token", null);
+        }
         if (deviceId == null || receiverToken == null) {
             stopSelf();
             return START_NOT_STICKY;
         }
+        getSharedPreferences("tv_settings", MODE_PRIVATE).edit()
+                .putString("device_id", deviceId)
+                .putString("receiver_token", receiverToken)
+                .apply();
         startForeground(NOTIFICATION_ID, notification("Waiting for remote connection"));
         stopped = false;
         connectSocket();
