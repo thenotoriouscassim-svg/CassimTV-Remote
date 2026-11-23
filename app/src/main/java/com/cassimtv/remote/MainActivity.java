@@ -17,6 +17,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -33,6 +34,9 @@ public class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout page;
     private TextView status;
+    private TextView volumeReadout;
+    private TextView muteReadout;
+    private ProgressBar volumeProgress;
     private String deviceId;
     private String remoteToken;
     private String pairingCode;
@@ -246,36 +250,104 @@ public class MainActivity extends Activity {
         service.putExtra("receiver_token", savedToken);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(service);
         else startService(service);
-        basePage("TV RECEIVER", "TV already registered", "This TV keeps its permanent identity. It will reconnect automatically after restarts.");
-        TextView ready = text("●  SAVED PAIRING ACTIVE", 15, Color.rgb(91, 220, 158), true);
-        ready.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams rp = params(-1, dp(70));
-        rp.topMargin = dp(25);
-        page.addView(ready, rp);
+        basePage("TV RECEIVER", "Your TV is ready", "This receiver keeps the same identity. Pair additional phones whenever you like.");
+        LinearLayout card = card();
+        card.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams cp = params(-1, dp(100));
+        cp.topMargin = dp(25);
+        page.addView(card, cp);
+        TextView ready = text("●  RECEIVER REGISTERED", 15, Color.rgb(91, 220, 158), true);
+        card.addView(ready);
+        Button add = button("PAIR ANOTHER PHONE", BLUE);
+        LinearLayout.LayoutParams ap = params(-1, dp(54));
+        ap.topMargin = dp(18);
+        page.addView(add, ap);
+        add.setOnClickListener(v -> createAdditionalPairing(savedId, savedToken));
         Button back = button("BACK", Color.rgb(42, 57, 82));
-        LinearLayout.LayoutParams bp = params(-1, dp(50));
-        bp.topMargin = dp(20);
+        LinearLayout.LayoutParams bp = params(-1, dp(48));
+        bp.topMargin = dp(10);
         page.addView(back, bp);
         back.setOnClickListener(v -> showHome());
     }
 
+    private void createAdditionalPairing(String savedId, String savedToken) {
+        basePage("ADD A REMOTE", "Pair another phone", "Enter this one-time code on the next phone. Existing remotes stay connected.");
+        status = text("Generating secure pairing code…", 14, MUTED, false);
+        status.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(25);
+        page.addView(status, sp);
+        worker.execute(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("device_id", savedId);
+                body.put("receiver_token", savedToken);
+                JSONObject result = RemoteApi.post("/tv/pair/add", body, null);
+                String code = result.getString("pairing_code");
+                runOnUiThread(() -> {
+                    status.setText("ENTER THIS CODE ON ANOTHER PHONE");
+                    TextView pin = text(code, 42, Color.rgb(91, 220, 158), true);
+                    pin.setGravity(Gravity.CENTER);
+                    LinearLayout.LayoutParams pp = params(-1, dp(100));
+                    pp.topMargin = dp(14);
+                    page.addView(pin, pp);
+                    TextView expiry = text("Code expires in 5 minutes · Existing phones remain paired", 12, MUTED, false);
+                    expiry.setGravity(Gravity.CENTER);
+                    page.addView(expiry);
+                    Button done = button("DONE", Color.rgb(42, 57, 82));
+                    LinearLayout.LayoutParams dp = params(-1, dp(50));
+                    dp.topMargin = dp(25);
+                    page.addView(done, dp);
+                    done.setOnClickListener(v -> showExistingTv(savedId, savedToken));
+                });
+            } catch (Exception e) {
+                String message = e.getMessage() == null ? "Could not generate pairing code." : e.getMessage();
+                runOnUiThread(() -> status.setText(message));
+            }
+        });
+    }
+
     private void showRemote() {
+        RemoteApi.setStatusListener(new RemoteApi.StatusListener() {
+            @Override public void onTvState(int volume, int maxVolume, boolean muted) {
+                runOnUiThread(() -> {
+                    if (volumeReadout != null) volumeReadout.setText("TV VOLUME   " + volume + " / " + maxVolume);
+                    if (volumeProgress != null) {
+                        volumeProgress.setMax(maxVolume);
+                        volumeProgress.setProgress(volume);
+                    }
+                    if (muteReadout != null) muteReadout.setText(muted ? "MUTED" : "AUDIO ON");
+                });
+            }
+            @Override public void onConnection(String message) {
+                runOnUiThread(() -> {
+                    if (status != null) status.setText(message);
+                });
+            }
+        });
         RemoteApi.connectRemote(deviceId, remoteToken);
-        basePage("CONNECTED REMOTE", "TV Remote", "Commands are relayed securely to your paired TV.");
-        LinearLayout badge = card();
-        badge.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams bp = params(-1, dp(58));
-        bp.topMargin = dp(20);
-        page.addView(badge, bp);
-        TextView connected = text("●  PAIRED WITH TV", 13, Color.rgb(91, 220, 158), true);
-        badge.addView(connected);
-        TextView navTitle = text("NAVIGATION", 12, MUTED, true);
+        basePage("CASSIM TV  ·  REMOTE", "Your TV", "A faster remote, with live feedback from your receiver.");
+
+        LinearLayout connection = card();
+        connection.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams conp = params(-1, dp(66));
+        conp.topMargin = dp(18);
+        page.addView(connection, conp);
+        TextView connected = text("●  PAIRED TV", 13, Color.rgb(91, 220, 158), true);
+        connection.addView(connected);
+        TextView sub = text("Secure connection · Multiple phones supported", 11, MUTED, false);
+        LinearLayout.LayoutParams subp = params(-1, -2);
+        subp.topMargin = dp(4);
+        connection.addView(sub, subp);
+
+        TextView navTitle = text("DIRECTIONAL CONTROL", 11, MUTED, true);
         LinearLayout.LayoutParams nt = params(-1, -2);
-        nt.topMargin = dp(25);
+        nt.topMargin = dp(22);
         page.addView(navTitle, nt);
         LinearLayout pad = card();
+        pad.setPadding(dp(12), dp(12), dp(12), dp(12));
         LinearLayout.LayoutParams pp = params(-1, -2);
-        pp.topMargin = dp(10);
+        pp.topMargin = dp(9);
         page.addView(pad, pp);
         LinearLayout r1 = row();
         pad.addView(r1, params(-1, dp(58)));
@@ -298,36 +370,56 @@ public class MainActivity extends Activity {
         spacer(r3);
 
         LinearLayout quick = row();
-        LinearLayout.LayoutParams qp = params(-1, dp(54));
-        qp.topMargin = dp(12);
+        LinearLayout.LayoutParams qp = params(-1, dp(52));
+        qp.topMargin = dp(11);
         page.addView(quick, qp);
         addRemoteButton(quick, "BACK", "BACK");
         addRemoteButton(quick, "HOME", "HOME");
         addRemoteButton(quick, "POWER", "POWER");
 
-        TextView volumeTitle = text("VOLUME", 12, MUTED, true);
+        TextView volumeTitle = text("SOUND", 11, MUTED, true);
         LinearLayout.LayoutParams vt = params(-1, -2);
-        vt.topMargin = dp(24);
+        vt.topMargin = dp(22);
         page.addView(volumeTitle, vt);
+        LinearLayout sound = card();
+        LinearLayout.LayoutParams soundp = params(-1, dp(126));
+        soundp.topMargin = dp(9);
+        page.addView(sound, soundp);
+        LinearLayout soundHeader = row();
+        sound.addView(soundHeader, params(-1, dp(28)));
+        volumeReadout = text("TV VOLUME   Waiting…", 13, TEXT, true);
+        soundHeader.addView(volumeReadout);
+        spacer(soundHeader);
+        muteReadout = text("AUDIO ON", 10, Color.rgb(91, 220, 158), true);
+        soundHeader.addView(muteReadout);
+        volumeProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        volumeProgress.setMax(100);
+        volumeProgress.setProgress(0);
+        LinearLayout.LayoutParams vbp = params(-1, dp(8));
+        vbp.topMargin = dp(13);
+        sound.addView(volumeProgress, vbp);
         LinearLayout volume = row();
-        LinearLayout.LayoutParams vp = params(-1, dp(58));
-        vp.topMargin = dp(10);
-        page.addView(volume, vp);
+        LinearLayout.LayoutParams vp = params(-1, dp(48));
+        vp.topMargin = dp(11);
+        sound.addView(volume, vp);
         addRemoteButton(volume, "−", "VOLUME_DOWN");
         addRemoteButton(volume, "MUTE", "MUTE");
         addRemoteButton(volume, "+", "VOLUME_UP");
 
-        status = text("Ready", 12, MUTED, false);
+        status = text("Connecting to your TV…", 11, MUTED, false);
         status.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams st = params(-1, -2);
-        st.topMargin = dp(15);
+        st.topMargin = dp(14);
         page.addView(status, st);
-        Button unpair = button("DISCONNECT / CHANGE TV", Color.rgb(42, 57, 82));
-        LinearLayout.LayoutParams up = params(-1, dp(48));
-        up.topMargin = dp(15);
+        Button unpair = button("DISCONNECT THIS PHONE", Color.rgb(42, 57, 82));
+        LinearLayout.LayoutParams up = params(-1, dp(46));
+        up.topMargin = dp(12);
         page.addView(unpair, up);
         unpair.setOnClickListener(v -> {
+            RemoteApi.setStatusListener(null);
             getSharedPreferences("remote_settings", MODE_PRIVATE).edit().clear().apply();
+            deviceId = null;
+            remoteToken = null;
             showHome();
         });
     }
@@ -341,6 +433,8 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
         p.setMargins(dp(4), 0, dp(4), 0);
         row.addView(b, p);
+        b.setElevation(dp(primary ? 5 : 2));
+        b.setContentDescription(action.replace('_', ' ').toLowerCase());
         b.setOnClickListener(v -> sendCommand(action));
     }
 
@@ -389,8 +483,10 @@ public class MainActivity extends Activity {
         b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(color);
-        bg.setCornerRadius(dp(15));
+        bg.setCornerRadius(dp(17));
         b.setBackground(bg);
+        b.setElevation(dp(2));
+        b.setPadding(dp(8), 0, dp(8), 0);
         b.setMinHeight(0);
         b.setMinimumHeight(0);
         return b;
