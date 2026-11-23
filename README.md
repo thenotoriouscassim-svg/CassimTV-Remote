@@ -1,27 +1,30 @@
 # Cassim TV Remote
 
-A native Android remote for Android TVs that expose ADB over TCP. The phone and TV must be on the same local network; the TV can stay connected by Ethernet.
+One Android app with two modes:
 
-## Current MVP
-- D-pad navigation, OK, Back, Home
-- Volume up/down and mute
-- Power key event
-- Saved TV IP address and port 5555
-- **Change TV IP** control and reconnect
-- ADB RSA key is generated once and stored privately in app storage
-- Connection and authorization feedback
+- **THIS IS TV** — creates a short-lived six-digit PIN and runs the receiver.
+- **THIS IS REMOTE** — enters the PIN and opens the remote-control screen.
 
-## Important first connection
-The TV must have ADB over TCP enabled on port 5555. On first connection, Android TV may show an RSA authorization prompt. Accept it on the TV and connect again. The app does not bypass ADB security.
+## Architecture
+
+The TV receiver maintains a persistent secure WebSocket to the Cassim relay on Render. The phone sends authenticated, allowlisted actions over HTTPS. The relay forwards each action and waits for an acknowledgement from the TV.
+
+Relay: https://cassimtv3.onrender.com
+
+## First prototype notes
+
+- Pairing PINs expire after five minutes and are single-use.
+- Receiver and remote receive separate random bearer tokens.
+- The relay currently keeps pairings in memory. A Render restart or instance replacement clears active pairings; pair again if that happens.
+- Both devices need internet access to reach the relay. They do not need to be on the same Wi-Fi network.
+- Volume up/down and mute use Android's local AudioManager.
+- Home, Back, directional focus movement, OK and the power dialog use the Android AccessibilityService. Enable **Cassim TV Navigation** in Android Accessibility settings on the TV.
+- Android restricts ordinary apps from injecting arbitrary hardware key events. The accessibility service navigates accessible focusable controls; compatibility varies by TV firmware and app.
+- The power button opens Android's power menu; it does not forcibly shut down the TV.
+- The receiver runs as a foreground connected-device service while paired.
 
 ## Build
-Open this project in Android Studio (Jellyfish or newer), allow Gradle sync, then run the app on an Android phone. Or run:
 
-```bash
-gradle :app:assembleDebug
-```
+Open this repository in Android Studio or use the GitHub Actions workflow. The debug APK is generated at:
 
-## Notes
-- The app uses the ADB protocol directly through the open-source `com.tananaev:adblib:1.3` library; it does not shell out to a terminal app.
-- Power uses Android keyevent 26. Some TVs may not wake from deep standby over ADB.
-- Tested hardware/network compatibility still needs to be confirmed on the target TV.
+`app/build/outputs/apk/debug/app-debug.apk`
